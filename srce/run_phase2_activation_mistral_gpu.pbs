@@ -23,12 +23,16 @@ export TOKENIZERS_PARALLELISM=false
 export HF_HOME="$PBS_O_WORKDIR/.cache/huggingface"
 export TRANSFORMERS_CACHE="$HF_HOME/transformers"
 export HF_DATASETS_CACHE="$HF_HOME/datasets"
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
 
 mkdir -p "$HF_HOME" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE" outputs
 
 export MODEL_CHOICE=mistral
 export DRIVE_PATH="$PBS_O_WORKDIR/outputs"
 export ARTIFACT_SUBDIR="phase2_activation_steering_enumerability"
+export PHASE1_CSV="$PBS_O_WORKDIR/outputs/df_webq_balanced.csv"
 
 # Larger confirmation run. Adjust these upward only after the gpu-test script is
 # known to work on Supek.

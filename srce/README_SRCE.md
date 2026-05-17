@@ -41,6 +41,23 @@ Then open a new shell or source your shell profile and rerun the setup script.
 
 ## 3. First debug run: gpu-test queue
 
+Before submitting a PBS job, prepare Hugging Face assets from a node with
+internet access:
+
+```bash
+MODEL_CHOICE=mistral bash srce/prepare_hf_assets.sh
+```
+
+This creates:
+
+```text
+outputs/df_webq_balanced.csv
+.cache/huggingface/
+```
+
+The PBS scripts run in offline mode, because compute nodes may not have
+outbound network access.
+
 Submit the shorter test job:
 
 ```bash

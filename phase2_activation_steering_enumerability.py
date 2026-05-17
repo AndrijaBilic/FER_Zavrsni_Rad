@@ -78,6 +78,7 @@ class Phase2Config:
     prompt_style: str = MODEL_CONFIGS[MODEL_CHOICE]["prompt_style"]
     drive_path: str = "/content/drive/MyDrive/thesis_probing"
     artifact_subdir: str = "phase2_activation_steering_enumerability"
+    phase1_csv: str | None = None
     seed: int = 42
 
     # Pilot defaults. Increase these only after the steering effect looks real.
@@ -136,6 +137,8 @@ if os.environ.get("ARTIFACT_SUBDIR"):
     CFG.artifact_subdir = os.environ["ARTIFACT_SUBDIR"]
 if os.environ.get("DRIVE_PATH"):
     CFG.drive_path = os.environ["DRIVE_PATH"]
+if os.environ.get("PHASE1_CSV"):
+    CFG.phase1_csv = os.environ["PHASE1_CSV"]
 if os.environ.get("BATCH_SIZE_ACTIVATIONS"):
     CFG.batch_size_activations = int(os.environ["BATCH_SIZE_ACTIVATIONS"])
 if os.environ.get("BATCH_SIZE_SCORING"):
@@ -178,10 +181,22 @@ def format_enumerability_instruction(question: str) -> str:
     return ENUMERABILITY_PROMPT.format(question=question.strip())
 
 
-def load_or_build_webquestions(drive_path: str) -> pd.DataFrame:
+def load_or_build_webquestions(cfg: Phase2Config) -> pd.DataFrame:
     """Load the Phase 1 balanced CSV when available, otherwise rebuild it."""
-    phase1_csv = Path(drive_path) / "df_webq_balanced.csv"
-    if phase1_csv.exists():
+    candidate_csvs = []
+    if cfg.phase1_csv:
+        candidate_csvs.append(Path(cfg.phase1_csv))
+    candidate_csvs.extend(
+        [
+            Path(cfg.drive_path) / "df_webq_balanced.csv",
+            Path.cwd() / "df_webq_balanced.csv",
+            Path.cwd() / "data" / "df_webq_balanced.csv",
+        ]
+    )
+
+    for phase1_csv in candidate_csvs:
+        if not phase1_csv.exists():
+            continue
         df = pd.read_csv(phase1_csv)
         expected_cols = {"question", "n_answers", "label"}
         missing = expected_cols - set(df.columns)
@@ -190,7 +205,10 @@ def load_or_build_webquestions(drive_path: str) -> pd.DataFrame:
         print(f"Loaded Phase 1 balanced dataframe: {phase1_csv} ({len(df)} rows)")
         return df
 
-    print("Phase 1 CSV not found. Loading WebQuestions from Hugging Face...")
+    print("Phase 1 CSV not found in:")
+    for phase1_csv in candidate_csvs:
+        print(" ", phase1_csv)
+    print("Loading WebQuestions from Hugging Face...")
     ds_webq = load_dataset("web_questions", split="train")
     rows = []
     for ex in ds_webq:
@@ -249,7 +267,7 @@ def make_splits(df: pd.DataFrame, cfg: Phase2Config):
     return train_df, val_df, test_df
 
 
-df_webq = load_or_build_webquestions(CFG.drive_path)
+df_webq = load_or_build_webquestions(CFG)
 if "label_str" not in df_webq.columns:
     df_webq["label_str"] = np.where(df_webq["label"].astype(int) == 1, "multiple", "single")
 
@@ -274,7 +292,12 @@ def dtype_from_name(name: str):
 
 
 def load_model_and_tokenizer(cfg: Phase2Config):
-    tokenizer = AutoTokenizer.from_pretrained(cfg.model_name, trust_remote_code=True)
+    offline = os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1"
+    tokenizer = AutoTokenizer.from_pretrained(
+        cfg.model_name,
+        trust_remote_code=True,
+        local_files_only=offline,
+    )
     tokenizer.padding_side = "left"
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -295,6 +318,7 @@ def load_model_and_tokenizer(cfg: Phase2Config):
         torch_dtype=dtype_from_name(cfg.torch_dtype),
         quantization_config=quant_config,
         low_cpu_mem_usage=cfg.low_cpu_mem_usage,
+        local_files_only=offline,
     ).eval()
     model.config.output_hidden_states = False
     model.requires_grad_(False)
