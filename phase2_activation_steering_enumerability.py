@@ -111,6 +111,7 @@ class Phase2Config:
     # larger alphas, which you can add after the first sanity check.
     alphas: tuple[float, ...] = (-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0)
     max_manual_questions: int = 5
+    webq_eval_per_class: int = 0
     stop_strings: tuple[str, ...] = ("\n\nQuestion:", "\nQuestion:", "\n\nQ:", "\nQ:")
 
     # If False, we follow the paper text and add the vector only at the selected
@@ -129,6 +130,8 @@ if os.environ.get("MAX_TEST_PER_CLASS"):
     CFG.max_test_per_class = int(os.environ["MAX_TEST_PER_CLASS"])
 if os.environ.get("MAX_MANUAL_QUESTIONS"):
     CFG.max_manual_questions = int(os.environ["MAX_MANUAL_QUESTIONS"])
+if os.environ.get("WEBQ_EVAL_PER_CLASS"):
+    CFG.webq_eval_per_class = int(os.environ["WEBQ_EVAL_PER_CLASS"])
 if os.environ.get("ALPHAS"):
     CFG.alphas = tuple(float(x.strip()) for x in os.environ["ALPHAS"].split(",") if x.strip())
 if os.environ.get("CANDIDATE_LAYERS"):
@@ -899,81 +902,170 @@ ALL_CURATED_EVAL_QUESTIONS = [
         "gold_label_str": "multiple",
         "n_gold_answers": 4,
     },
+    {
+        "question": "Name an actor who played Spider-Man.",
+        "gold_label": 0,
+        "gold_label_str": "single",
+        "n_gold_answers": 1,
+    },
+    {
+        "question": "Name actors who played Spider-Man.",
+        "gold_label": 1,
+        "gold_label_str": "multiple",
+        "n_gold_answers": 3,
+    },
+    {
+        "question": "Name a color in the French flag.",
+        "gold_label": 0,
+        "gold_label_str": "single",
+        "n_gold_answers": 1,
+    },
+    {
+        "question": "Name the colors in the French flag.",
+        "gold_label": 1,
+        "gold_label_str": "multiple",
+        "n_gold_answers": 3,
+    },
+    {
+        "question": "Name a common cause of fever.",
+        "gold_label": 0,
+        "gold_label_str": "single",
+        "n_gold_answers": 1,
+    },
+    {
+        "question": "Name common causes of fever.",
+        "gold_label": 1,
+        "gold_label_str": "multiple",
+        "n_gold_answers": 4,
+    },
 ]
 
-manual_eval_df = pd.DataFrame(ALL_CURATED_EVAL_QUESTIONS[: CFG.max_manual_questions])
-manual_eval_prompts = [format_enumerability_instruction(q) for q in manual_eval_df["question"]]
-manual_eval_labels = manual_eval_df["gold_label"].astype(int).tolist()
+def standardize_eval_df(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy().reset_index(drop=True)
+    if "gold_label" not in out.columns:
+        out["gold_label"] = out["label"].astype(int)
+    if "gold_label_str" not in out.columns:
+        out["gold_label_str"] = np.where(out["gold_label"].astype(int) == 1, "multiple", "single")
+    if "n_gold_answers" not in out.columns:
+        out["n_gold_answers"] = out["n_answers"].astype(int)
+    return out[["question", "gold_label", "gold_label_str", "n_gold_answers"]]
 
-print("Manual generation questions:")
-display(manual_eval_df)
 
-all_generation_rows = []
-all_summary_rows = []
+def sample_balanced_webq_eval(test_split: pd.DataFrame, per_class: int, seed: int) -> pd.DataFrame:
+    rows = []
+    for label in [0, 1]:
+        part = test_split[test_split["label"].astype(int) == label]
+        n = min(per_class, len(part))
+        rows.append(part.sample(n=n, random_state=seed + label))
+    return standardize_eval_df(pd.concat(rows).sample(frac=1, random_state=seed).reset_index(drop=True))
 
-for alpha in CFG.alphas:
-    direction = None if alpha == 0 else best_direction_cpu
-    completions = generate_completions(
-        manual_eval_prompts,
-        direction=direction,
-        layer=best_meta["layer"],
-        pos=best_meta["position"],
-        alpha=alpha,
-        batch_size=CFG.batch_size_generation,
-        max_new_tokens=CFG.max_new_tokens,
-    )
 
-    for item, (_, row) in zip(completions, manual_eval_df.iterrows()):
-        count_detail = answer_count_details(item["response"])
-        all_generation_rows.append(
-            {
-                "alpha": alpha,
-                "question": row["question"],
-                "gold_label": int(row["gold_label"]),
-                "gold_label_str": row["gold_label_str"],
-                "n_gold_answers": int(row["n_gold_answers"]),
-                "response": item["response"],
-                "parsed_type": parse_answer_type(item["response"]),
-                "generated_answer_count": int(count_detail["count"]),
-                "count_method": count_detail["method"],
-                "count_confidence": count_detail["confidence"],
-                "is_enumerated": int(count_detail["count"]) >= 2,
-            }
+def run_steering_eval(eval_name: str, eval_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    eval_df = standardize_eval_df(eval_df)
+    prompts = [format_enumerability_instruction(q) for q in eval_df["question"]]
+    labels = eval_df["gold_label"].astype(int).tolist()
+
+    print(f"{eval_name} generation questions:", len(eval_df))
+    display(eval_df.head(20))
+
+    all_generation_rows = []
+    all_summary_rows = []
+
+    for alpha in CFG.alphas:
+        direction = None if alpha == 0 else best_direction_cpu
+        completions = generate_completions(
+            prompts,
+            direction=direction,
+            layer=best_meta["layer"],
+            pos=best_meta["position"],
+            alpha=alpha,
+            batch_size=CFG.batch_size_generation,
+            max_new_tokens=CFG.max_new_tokens,
         )
 
-    summary = summarize_completions(completions, manual_eval_labels, alpha)
-    all_summary_rows.append(summary)
-    print(json.dumps(summary, indent=2))
+        for item, (_, row) in zip(completions, eval_df.iterrows()):
+            count_detail = answer_count_details(item["response"])
+            all_generation_rows.append(
+                {
+                    "eval_name": eval_name,
+                    "alpha": alpha,
+                    "question": row["question"],
+                    "gold_label": int(row["gold_label"]),
+                    "gold_label_str": row["gold_label_str"],
+                    "n_gold_answers": int(row["n_gold_answers"]),
+                    "response": item["response"],
+                    "parsed_type": parse_answer_type(item["response"]),
+                    "generated_answer_count": int(count_detail["count"]),
+                    "count_method": count_detail["method"],
+                    "count_confidence": count_detail["confidence"],
+                    "is_enumerated": int(count_detail["count"]) >= 2,
+                }
+            )
 
-generation_df = pd.DataFrame(all_generation_rows)
-summary_df = pd.DataFrame(all_summary_rows)
+        summary = summarize_completions(completions, labels, alpha)
+        summary["eval_name"] = eval_name
+        all_summary_rows.append(summary)
+        print(eval_name, json.dumps(summary, indent=2))
 
+    generation_df = pd.DataFrame(all_generation_rows)
+    summary_df = pd.DataFrame(all_summary_rows)
+
+    generation_df.to_csv(ARTIFACT_DIR / f"{eval_name}_steered_generations.csv", index=False)
+    summary_df.to_csv(ARTIFACT_DIR / f"{eval_name}_steering_alpha_summary.csv", index=False)
+
+    with open(ARTIFACT_DIR / f"{eval_name}_steered_generations.json", "w", encoding="utf-8") as f:
+        json.dump(all_generation_rows, f, indent=2, ensure_ascii=False)
+
+    review_df = generation_df[
+        [
+            "eval_name",
+            "alpha",
+            "question",
+            "gold_label_str",
+            "n_gold_answers",
+            "response",
+            "parsed_type",
+            "generated_answer_count",
+            "count_method",
+            "count_confidence",
+            "is_enumerated",
+        ]
+    ].copy()
+    review_df["manual_answer_type"] = ""
+    review_df["manual_answer_count"] = ""
+    review_df["manual_notes"] = ""
+    review_df.to_csv(ARTIFACT_DIR / f"{eval_name}_manual_review_steered_generations.csv", index=False)
+
+    print(f"{eval_name} manual review CSV:", ARTIFACT_DIR / f"{eval_name}_manual_review_steered_generations.csv")
+    return generation_df, summary_df
+
+
+curated_eval_df = pd.DataFrame(ALL_CURATED_EVAL_QUESTIONS[: CFG.max_manual_questions])
+curated_generation_df, curated_summary_df = run_steering_eval("curated", curated_eval_df)
+
+all_generation_dfs = [curated_generation_df]
+all_summary_dfs = [curated_summary_df]
+
+if CFG.webq_eval_per_class > 0:
+    webq_eval_df = sample_balanced_webq_eval(test_df, CFG.webq_eval_per_class, CFG.seed)
+    webq_generation_df, webq_summary_df = run_steering_eval("webq", webq_eval_df)
+    all_generation_dfs.append(webq_generation_df)
+    all_summary_dfs.append(webq_summary_df)
+
+generation_df = pd.concat(all_generation_dfs, ignore_index=True)
+summary_df = pd.concat(all_summary_dfs, ignore_index=True)
+
+# Backward-compatible combined outputs.
 generation_df.to_csv(ARTIFACT_DIR / "steered_generations.csv", index=False)
 summary_df.to_csv(ARTIFACT_DIR / "steering_alpha_summary.csv", index=False)
 
-with open(ARTIFACT_DIR / "steered_generations.json", "w", encoding="utf-8") as f:
-    json.dump(all_generation_rows, f, indent=2, ensure_ascii=False)
-
-manual_review_df = generation_df[
-    [
-        "alpha",
-        "question",
-        "gold_label_str",
-        "n_gold_answers",
-        "response",
-        "parsed_type",
-        "generated_answer_count",
-        "count_method",
-        "count_confidence",
-        "is_enumerated",
-    ]
-].copy()
+manual_review_df = generation_df.copy()
 manual_review_df["manual_answer_type"] = ""
 manual_review_df["manual_answer_count"] = ""
 manual_review_df["manual_notes"] = ""
 manual_review_df.to_csv(ARTIFACT_DIR / "manual_review_steered_generations.csv", index=False)
 
-print("Manual review CSV:", ARTIFACT_DIR / "manual_review_steered_generations.csv")
+print("Combined manual review CSV:", ARTIFACT_DIR / "manual_review_steered_generations.csv")
 summary_df
 
 
@@ -987,14 +1079,18 @@ import seaborn as sns
 sns.set_theme(style="whitegrid", context="notebook")
 
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
-sns.lineplot(data=summary_df, x="alpha", y="multiple_type_rate", marker="o", ax=axes[0])
-sns.lineplot(data=summary_df, x="alpha", y="enumeration_rate", marker="s", ax=axes[0])
+plot_df = summary_df.melt(
+    id_vars=["eval_name", "alpha"],
+    value_vars=["multiple_type_rate", "enumeration_rate"],
+    var_name="metric",
+    value_name="rate",
+)
+sns.lineplot(data=plot_df, x="alpha", y="rate", hue="metric", style="eval_name", marker="o", ax=axes[0])
 axes[0].axvline(0, color="gray", linestyle="--", linewidth=1)
 axes[0].set_title("Target behavior rate")
-axes[0].legend(["Parsed label: multiple", "Counted as enumerated"])
 axes[0].set_ylim(0, 1)
 
-sns.lineplot(data=summary_df, x="alpha", y="mean_generated_answer_count", marker="o", ax=axes[1])
+sns.lineplot(data=summary_df, x="alpha", y="mean_generated_answer_count", hue="eval_name", marker="o", ax=axes[1])
 axes[1].axvline(0, color="gray", linestyle="--", linewidth=1)
 axes[1].set_title("Mean generated answer count")
 

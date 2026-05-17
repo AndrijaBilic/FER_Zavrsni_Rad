@@ -97,6 +97,10 @@ outputs/phase2_activation_steering_enumerability/mistral_7b/
 The most important files are:
 
 ```text
+curated_manual_review_steered_generations.csv
+curated_steering_alpha_summary.csv
+webq_manual_review_steered_generations.csv
+webq_steering_alpha_summary.csv
 manual_review_steered_generations.csv
 steering_alpha_summary.csv
 direction_selection_scores.csv
@@ -117,6 +121,7 @@ MAX_TRAIN_PER_CLASS=600
 MAX_VAL_PER_CLASS=200
 MAX_TEST_PER_CLASS=200
 MAX_MANUAL_QUESTIONS=10
+WEBQ_EVAL_PER_CLASS=50
 ALPHAS="-1.5,-1.0,-0.5,0.0,0.5,1.0,1.5"
 CANDIDATE_LAYERS="16,17,18,19,20,21,22,23,24,25,26,27,28,29,30"
 ```
