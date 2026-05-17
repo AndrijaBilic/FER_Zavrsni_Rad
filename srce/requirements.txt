@@ -1,0 +1,11 @@
+accelerate
+bitsandbytes
+datasets
+ipython
+matplotlib
+numpy
+pandas
+scikit-learn
+seaborn
+tqdm
+transformers

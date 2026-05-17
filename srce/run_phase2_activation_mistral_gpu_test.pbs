@@ -1,0 +1,45 @@
+#!/bin/bash
+#PBS -N enum-mistral-test
+#PBS -q gpu-test
+#PBS -l select=1:ncpus=8:ngpus=1:mem=120gb
+#PBS -l walltime=01:00:00
+#PBS -j oe
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+
+echo "Job started: $(date)"
+echo "Host: $(hostname)"
+echo "Workdir: $PBS_O_WORKDIR"
+echo "Job id: ${PBS_JOBID:-unknown}"
+
+if [ ! -x .venv/bin/python ]; then
+  echo "Missing .venv. Run first: bash srce/setup_uv_env.sh"
+  exit 2
+fi
+
+export PYTHONUNBUFFERED=1
+export TOKENIZERS_PARALLELISM=false
+export HF_HOME="$PBS_O_WORKDIR/.cache/huggingface"
+export TRANSFORMERS_CACHE="$HF_HOME/transformers"
+export HF_DATASETS_CACHE="$HF_HOME/datasets"
+
+mkdir -p "$HF_HOME" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE" outputs
+
+# Phase-2 activation-steering experiment settings.
+export MODEL_CHOICE=mistral
+export DRIVE_PATH="$PBS_O_WORKDIR/outputs"
+export ARTIFACT_SUBDIR="phase2_activation_steering_enumerability"
+
+# Keep this test queue run moderate. It should finish within gpu-test limits
+# after the model/dependencies are already cached.
+export MAX_TRAIN_PER_CLASS=600
+export MAX_VAL_PER_CLASS=200
+export MAX_TEST_PER_CLASS=200
+export MAX_MANUAL_QUESTIONS=10
+export ALPHAS="-1.5,-1.0,-0.5,0.0,0.5,1.0,1.5"
+export CANDIDATE_LAYERS="16,17,18,19,20,21,22,23,24,25,26,27,28,29,30"
+
+.venv/bin/python phase2_activation_steering_enumerability.py
+
+echo "Job finished: $(date)"
