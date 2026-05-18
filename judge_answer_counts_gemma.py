@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import torch
 from tqdm.auto import tqdm
-from transformers import AutoModelForCausalLM, AutoProcessor, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 
 @dataclass
@@ -57,11 +57,13 @@ def dtype_from_name(name: str):
 
 def load_judge():
     offline = os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1"
-    processor = AutoProcessor.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained(
         CFG.judge_model,
         trust_remote_code=True,
         local_files_only=offline,
     )
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
 
     quant_config = None
     if CFG.use_4bit:
@@ -82,10 +84,10 @@ def load_judge():
         local_files_only=offline,
     ).eval()
     model.requires_grad_(False)
-    return model, processor
+    return model, tokenizer
 
 
-model, processor = load_judge()
+model, tokenizer = load_judge()
 device = next(model.parameters()).device
 print(f"Loaded judge {CFG.judge_model} on {device}")
 
@@ -148,14 +150,9 @@ Items:
 
 
 def apply_chat_template(prompt: str):
-    messages = [
-        {
-            "role": "user",
-            "content": [{"type": "text", "text": prompt}],
-        }
-    ]
+    messages = [{"role": "user", "content": prompt}]
     try:
-        return processor.apply_chat_template(
+        return tokenizer.apply_chat_template(
             messages,
             add_generation_prompt=True,
             tokenize=True,
@@ -163,20 +160,17 @@ def apply_chat_template(prompt: str):
             return_tensors="pt",
         )
     except TypeError:
-        # Some processor/tokenizer versions accept plain text content.
-        messages = [{"role": "user", "content": prompt}]
-        return processor.apply_chat_template(
+        formatted = tokenizer.apply_chat_template(
             messages,
             add_generation_prompt=True,
-            tokenize=True,
-            return_dict=True,
-            return_tensors="pt",
+            tokenize=False,
         )
+        return tokenizer(formatted, return_tensors="pt")
 
 
 def decode_new_tokens(outputs, input_len: int) -> str:
     toks = outputs[0][input_len:]
-    return processor.decode(toks, skip_special_tokens=True).strip()
+    return tokenizer.decode(toks, skip_special_tokens=True).strip()
 
 
 def extract_json_array(text: str):
@@ -196,7 +190,7 @@ def run_judge_batch(items: list[dict]) -> tuple[list[dict], str]:
             **inputs,
             max_new_tokens=max_new_tokens,
             do_sample=False,
-            pad_token_id=getattr(processor, "pad_token_id", None),
+            pad_token_id=tokenizer.pad_token_id,
         )
     raw = decode_new_tokens(outputs, inputs["input_ids"].shape[-1])
     parsed = extract_json_array(raw)
