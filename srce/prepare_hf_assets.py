@@ -67,6 +67,10 @@ def main():
     build_webq_csv(output_dir)
     cache_model(MODEL_CONFIGS[model_choice])
 
+    judge_model = os.environ.get("JUDGE_MODEL")
+    if judge_model:
+        cache_model(judge_model)
+
 
 if __name__ == "__main__":
     main()

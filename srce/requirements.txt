@@ -1,11 +1,14 @@
 accelerate
 bitsandbytes
 datasets
+huggingface_hub
 ipython
 matplotlib
 numpy
 pandas
+pillow
 scikit-learn
 seaborn
+sentencepiece
 tqdm
 transformers

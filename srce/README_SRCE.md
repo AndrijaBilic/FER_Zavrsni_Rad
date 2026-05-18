@@ -88,6 +88,43 @@ Once the test job works, submit:
 qsub srce/run_phase2_activation_mistral_gpu.pbs
 ```
 
+## 4b. Gemma Judge
+
+After the steering generation files exist, cache Gemma from a node with internet
+access:
+
+```bash
+JUDGE_MODEL=google/gemma-4-31B-it MODEL_CHOICE=mistral bash srce/prepare_hf_assets.sh
+```
+
+Then test the judge on 12 rows:
+
+```bash
+qsub srce/run_gemma_judge_test.pbs
+```
+
+If the test succeeds, judge all current curated and WebQuestions rows:
+
+```bash
+qsub srce/run_gemma_judge_full.pbs
+```
+
+Judge outputs go to:
+
+```text
+outputs/phase2_activation_steering_enumerability/mistral_7b/gemma_judge/
+```
+
+Important judge files:
+
+```text
+judged_generations.csv
+judge_alpha_summary.csv
+curated_judge_alpha_summary.csv
+webq_judge_alpha_summary.csv
+raw_judge_outputs.json
+```
+
 Outputs go to:
 
 ```text
