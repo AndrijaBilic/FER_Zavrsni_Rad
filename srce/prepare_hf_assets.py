@@ -9,6 +9,9 @@ from huggingface_hub import snapshot_download
 MODEL_CONFIGS = {
     "qwen": "Qwen/Qwen3-4B",
     "mistral": "mistralai/Mistral-7B-v0.1",
+    "llama31_8b_it": "meta-llama/Llama-3.1-8B-Instruct",
+    "qwen3_8b": "Qwen/Qwen3-8B",
+    "gemma3_12b_it": "google/gemma-3-12b-it",
 }
 
 

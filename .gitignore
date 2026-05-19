@@ -1,6 +1,10 @@
 .venv/
 .cache/
 outputs/
+analysis_outputs/
+gemma_judge/
+unanswerability-directions/
+paper_2025_emnlp_main_813_extracted.txt
 __pycache__/
 *.pyc
 .ipynb_checkpoints/

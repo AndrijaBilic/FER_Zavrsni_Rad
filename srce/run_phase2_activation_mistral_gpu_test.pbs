@@ -29,8 +29,9 @@ export HF_DATASETS_OFFLINE=1
 
 mkdir -p "$HF_HOME" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE" outputs
 
-# Phase-2 activation-steering experiment settings.
-export MODEL_CHOICE=mistral
+# Phase-2 activation-steering experiment settings. Override at submission with:
+#   qsub -v MODEL_CHOICE=llama31_8b_it srce/run_phase2_activation_mistral_gpu_test.pbs
+export MODEL_CHOICE="${MODEL_CHOICE:-mistral}"
 export DRIVE_PATH="$PBS_O_WORKDIR/outputs"
 export ARTIFACT_SUBDIR="phase2_activation_steering_enumerability"
 export PHASE1_CSV="$PBS_O_WORKDIR/outputs/df_webq_balanced.csv"
@@ -42,8 +43,8 @@ export MAX_VAL_PER_CLASS=200
 export MAX_TEST_PER_CLASS=200
 export MAX_MANUAL_QUESTIONS=10
 export WEBQ_EVAL_PER_CLASS=25
+export MAX_OOD_QUESTIONS=12
 export ALPHAS="-1.5,-1.0,-0.5,0.0,0.5,1.0,1.5"
-export CANDIDATE_LAYERS="16,17,18,19,20,21,22,23,24,25,26,27,28,29,30"
 
 .venv/bin/python phase2_activation_steering_enumerability.py
 

@@ -12,25 +12,43 @@ from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 
+STEERING_MODEL_KEYS = {
+    "qwen": "qwen3_4b",
+    "mistral": "mistral_7b",
+    "llama31_8b_it": "llama31_8b_it",
+    "qwen3_8b": "qwen3_8b",
+    "gemma3_12b_it": "gemma3_12b_it",
+}
+
+
+def default_results_dir() -> str:
+    model_choice = os.environ.get("MODEL_CHOICE", "mistral")
+    model_key = os.environ.get("MODEL_KEY", STEERING_MODEL_KEYS.get(model_choice, model_choice))
+    drive_path = os.environ.get("DRIVE_PATH", "outputs")
+    artifact_subdir = os.environ.get("ARTIFACT_SUBDIR", "phase2_activation_steering_enumerability")
+    return str(Path(drive_path) / artifact_subdir / model_key)
+
+
 @dataclass
 class JudgeConfig:
     judge_model: str = os.environ.get("JUDGE_MODEL", "google/gemma-4-31B-it")
-    results_dir: str = os.environ.get(
-        "RESULTS_DIR",
-        "outputs/phase2_activation_steering_enumerability/mistral_7b",
-    )
+    model_choice: str = os.environ.get("MODEL_CHOICE", "mistral")
+    results_dir: str = os.environ.get("RESULTS_DIR", default_results_dir())
     input_files: tuple[str, ...] = tuple(
         x.strip()
         for x in os.environ.get(
             "JUDGE_INPUT_FILES",
-            "curated_manual_review_steered_generations.csv,webq_manual_review_steered_generations.csv",
+            "curated_manual_review_steered_generations.csv,webq_manual_review_steered_generations.csv,ood_manual_review_steered_generations.csv",
         ).split(",")
         if x.strip()
     )
     output_subdir: str = os.environ.get("JUDGE_OUTPUT_SUBDIR", "gemma_judge")
     batch_size: int = int(os.environ.get("JUDGE_BATCH_SIZE", "5"))
     max_new_tokens_per_item: int = int(os.environ.get("JUDGE_MAX_NEW_TOKENS_PER_ITEM", "90"))
-    use_4bit: bool = os.environ.get("JUDGE_USE_4BIT", "1") != "0"
+    quantization: str = os.environ.get(
+        "JUDGE_QUANTIZATION",
+        "4bit" if os.environ.get("JUDGE_USE_4BIT", "1") != "0" else "bf16",
+    )
     use_double_quant: bool = os.environ.get("JUDGE_USE_DOUBLE_QUANT", "1") != "0"
     torch_dtype: str = os.environ.get("JUDGE_TORCH_DTYPE", "float16")
     max_rows: int = int(os.environ.get("JUDGE_MAX_ROWS", "0"))
@@ -65,14 +83,21 @@ def load_judge():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    quantization = CFG.quantization.lower()
     quant_config = None
-    if CFG.use_4bit:
+    if quantization in {"4bit", "nf4"}:
         quant_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=dtype_from_name(CFG.torch_dtype),
             bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=CFG.use_double_quant,
         )
+    elif quantization in {"8bit", "int8"}:
+        quant_config = BitsAndBytesConfig(load_in_8bit=True)
+    elif quantization in {"bf16", "float16", "none"}:
+        quant_config = None
+    else:
+        raise ValueError("JUDGE_QUANTIZATION must be one of: 4bit, int8, bf16")
 
     model = AutoModelForCausalLM.from_pretrained(
         CFG.judge_model,
@@ -97,13 +122,16 @@ def read_generation_files() -> pd.DataFrame:
     for name in CFG.input_files:
         path = RESULTS_DIR / name
         if not path.exists():
-            raise FileNotFoundError(path)
+            print(f"Skipping missing judge input file: {path}")
+            continue
         df = pd.read_csv(path)
         if "eval_name" not in df.columns:
             df["eval_name"] = name.split("_", 1)[0]
         df["source_file"] = name
         frames.append(df)
 
+    if not frames:
+        raise FileNotFoundError(f"No judge input files found in {RESULTS_DIR}")
     out = pd.concat(frames, ignore_index=True)
     out["row_id"] = np.arange(len(out))
     if CFG.alphas.strip():

@@ -48,7 +48,7 @@ except Exception:
 # %%
 # -- Model Selection ---------------------------------------------------------
 # Match the Phase 1 notebook: change this single value to switch models.
-MODEL_CHOICE = os.environ.get("MODEL_CHOICE", "qwen")   # set to "mistral" to run Mistral-7B-v0.1
+MODEL_CHOICE = os.environ.get("MODEL_CHOICE", "qwen")   # e.g. mistral, llama31_8b_it, qwen3_8b, gemma3_12b_it
 
 MODEL_CONFIGS = {
     "qwen": {
@@ -62,6 +62,26 @@ MODEL_CONFIGS = {
         "model_key": "mistral_7b",
         "prompt_style": "plain",
         "candidate_layers": list(range(18, 29)),
+    },
+    "llama31_8b_it": {
+        "model_name": "meta-llama/Llama-3.1-8B-Instruct",
+        "model_key": "llama31_8b_it",
+        "prompt_style": "chat",
+        "candidate_layers": list(range(16, 31)),
+    },
+    # Qwen 3 has an 8B open checkpoint; if you meant a different exact "Qwen
+    # 3.5 9B" checkpoint, change only model_name/model_key here.
+    "qwen3_8b": {
+        "model_name": "Qwen/Qwen3-8B",
+        "model_key": "qwen3_8b",
+        "prompt_style": "chat",
+        "candidate_layers": list(range(16, 35)),
+    },
+    "gemma3_12b_it": {
+        "model_name": "google/gemma-3-12b-it",
+        "model_key": "gemma3_12b_it",
+        "prompt_style": "chat",
+        "candidate_layers": list(range(18, 43)),
     },
 }
 
@@ -112,6 +132,7 @@ class Phase2Config:
     alphas: tuple[float, ...] = (-2.0, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0)
     max_manual_questions: int = 5
     webq_eval_per_class: int = 0
+    max_ood_questions: int = 0
     stop_strings: tuple[str, ...] = ("\n\nQuestion:", "\nQuestion:", "\n\nQ:", "\nQ:")
 
     # If False, we follow the paper text and add the vector only at the selected
@@ -132,6 +153,8 @@ if os.environ.get("MAX_MANUAL_QUESTIONS"):
     CFG.max_manual_questions = int(os.environ["MAX_MANUAL_QUESTIONS"])
 if os.environ.get("WEBQ_EVAL_PER_CLASS"):
     CFG.webq_eval_per_class = int(os.environ["WEBQ_EVAL_PER_CLASS"])
+if os.environ.get("MAX_OOD_QUESTIONS"):
+    CFG.max_ood_questions = int(os.environ["MAX_OOD_QUESTIONS"])
 if os.environ.get("ALPHAS"):
     CFG.alphas = tuple(float(x.strip()) for x in os.environ["ALPHAS"].split(",") if x.strip())
 if os.environ.get("CANDIDATE_LAYERS"):
@@ -940,6 +963,82 @@ ALL_CURATED_EVAL_QUESTIONS = [
     },
 ]
 
+
+ALL_OOD_EVAL_QUESTIONS = [
+    {
+        "question": "What country is Brest located in?",
+        "gold_label": 1,
+        "gold_label_str": "multiple",
+        "n_gold_answers": 2,
+    },
+    {
+        "question": "What is the capital of France?",
+        "gold_label": 0,
+        "gold_label_str": "single",
+        "n_gold_answers": 1,
+    },
+    {
+        "question": "Who has won the FIFA World Cup?",
+        "gold_label": 1,
+        "gold_label_str": "multiple",
+        "n_gold_answers": 8,
+    },
+    {
+        "question": "Who wrote Pride and Prejudice?",
+        "gold_label": 0,
+        "gold_label_str": "single",
+        "n_gold_answers": 1,
+    },
+    {
+        "question": "Which cities have hosted the Summer Olympics?",
+        "gold_label": 1,
+        "gold_label_str": "multiple",
+        "n_gold_answers": 20,
+    },
+    {
+        "question": "What element has the chemical symbol Au?",
+        "gold_label": 0,
+        "gold_label_str": "single",
+        "n_gold_answers": 1,
+    },
+    {
+        "question": "Which programming languages are commonly used for web development?",
+        "gold_label": 1,
+        "gold_label_str": "multiple",
+        "n_gold_answers": 5,
+    },
+    {
+        "question": "Who painted the Mona Lisa?",
+        "gold_label": 0,
+        "gold_label_str": "single",
+        "n_gold_answers": 1,
+    },
+    {
+        "question": "What diseases can be prevented by vaccination?",
+        "gold_label": 1,
+        "gold_label_str": "multiple",
+        "n_gold_answers": 5,
+    },
+    {
+        "question": "What planet is known as the Red Planet?",
+        "gold_label": 0,
+        "gold_label_str": "single",
+        "n_gold_answers": 1,
+    },
+    {
+        "question": "Which countries border Germany?",
+        "gold_label": 1,
+        "gold_label_str": "multiple",
+        "n_gold_answers": 9,
+    },
+    {
+        "question": "Who discovered penicillin?",
+        "gold_label": 0,
+        "gold_label_str": "single",
+        "n_gold_answers": 1,
+    },
+]
+
 def standardize_eval_df(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy().reset_index(drop=True)
     if "gold_label" not in out.columns:
@@ -955,8 +1054,11 @@ def sample_balanced_webq_eval(test_split: pd.DataFrame, per_class: int, seed: in
     rows = []
     for label in [0, 1]:
         part = test_split[test_split["label"].astype(int) == label]
-        n = min(per_class, len(part))
-        rows.append(part.sample(n=n, random_state=seed + label))
+        if per_class < 0:
+            rows.append(part)
+        else:
+            n = min(per_class, len(part))
+            rows.append(part.sample(n=n, random_state=seed + label))
     return standardize_eval_df(pd.concat(rows).sample(frac=1, random_state=seed).reset_index(drop=True))
 
 
@@ -1051,6 +1153,12 @@ if CFG.webq_eval_per_class > 0:
     webq_generation_df, webq_summary_df = run_steering_eval("webq", webq_eval_df)
     all_generation_dfs.append(webq_generation_df)
     all_summary_dfs.append(webq_summary_df)
+
+if CFG.max_ood_questions > 0:
+    ood_eval_df = pd.DataFrame(ALL_OOD_EVAL_QUESTIONS[: CFG.max_ood_questions])
+    ood_generation_df, ood_summary_df = run_steering_eval("ood", ood_eval_df)
+    all_generation_dfs.append(ood_generation_df)
+    all_summary_dfs.append(ood_summary_df)
 
 generation_df = pd.concat(all_generation_dfs, ignore_index=True)
 summary_df = pd.concat(all_summary_dfs, ignore_index=True)

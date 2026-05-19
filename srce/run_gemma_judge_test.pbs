@@ -27,12 +27,14 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 
+export MODEL_CHOICE="${MODEL_CHOICE:-mistral}"
+export DRIVE_PATH="$PBS_O_WORKDIR/outputs"
+export ARTIFACT_SUBDIR="phase2_activation_steering_enumerability"
 export JUDGE_MODEL="${JUDGE_MODEL:-google/gemma-4-31B-it}"
-export RESULTS_DIR="$PBS_O_WORKDIR/outputs/phase2_activation_steering_enumerability/mistral_7b"
 export JUDGE_OUTPUT_SUBDIR="gemma_judge_test"
 export JUDGE_BATCH_SIZE=3
 export JUDGE_MAX_ROWS=12
-export JUDGE_USE_4BIT=1
+export JUDGE_QUANTIZATION=int8
 export JUDGE_TORCH_DTYPE=float16
 
 .venv/bin/python judge_answer_counts_gemma.py

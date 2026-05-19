@@ -103,10 +103,37 @@ Then test the judge on 12 rows:
 qsub srce/run_gemma_judge_test.pbs
 ```
 
+For a non-default steering model, pass the same model choice used for
+generation:
+
+```bash
+qsub -v MODEL_CHOICE=llama31_8b_it srce/run_gemma_judge_test.pbs
+qsub -v MODEL_CHOICE=qwen3_8b srce/run_gemma_judge_test.pbs
+qsub -v MODEL_CHOICE=gemma3_12b_it srce/run_gemma_judge_test.pbs
+```
+
 If the test succeeds, judge all current curated and WebQuestions rows:
 
 ```bash
 qsub srce/run_gemma_judge_full.pbs
+```
+
+or, for a specific steering model:
+
+```bash
+qsub -v MODEL_CHOICE=llama31_8b_it srce/run_gemma_judge_full.pbs
+```
+
+The judge PBS scripts use INT8 quantization by default:
+
+```bash
+JUDGE_QUANTIZATION=int8
+```
+
+For smaller GPUs you can switch this to:
+
+```bash
+JUDGE_QUANTIZATION=4bit
 ```
 
 Judge outputs go to:
@@ -138,6 +165,8 @@ curated_manual_review_steered_generations.csv
 curated_steering_alpha_summary.csv
 webq_manual_review_steered_generations.csv
 webq_steering_alpha_summary.csv
+ood_manual_review_steered_generations.csv
+ood_steering_alpha_summary.csv
 manual_review_steered_generations.csv
 steering_alpha_summary.csv
 direction_selection_scores.csv
@@ -154,22 +183,45 @@ Useful variables:
 
 ```bash
 MODEL_CHOICE=mistral
+MODEL_CHOICE=llama31_8b_it
+MODEL_CHOICE=qwen3_8b
+MODEL_CHOICE=gemma3_12b_it
 MAX_TRAIN_PER_CLASS=600
 MAX_VAL_PER_CLASS=200
 MAX_TEST_PER_CLASS=200
 MAX_MANUAL_QUESTIONS=10
 WEBQ_EVAL_PER_CLASS=50
+MAX_OOD_QUESTIONS=12
 ALPHAS="-1.5,-1.0,-0.5,0.0,0.5,1.0,1.5"
-CANDIDATE_LAYERS="16,17,18,19,20,21,22,23,24,25,26,27,28,29,30"
 ```
 
-For Qwen, use:
+`WEBQ_EVAL_PER_CLASS=50` means evaluate steering on 50 held-out single
+questions and 50 held-out multiple questions. Set it to `-1` only if you want
+the whole held-out WebQuestions test split.
+
+To cache a model before submitting an offline PBS job:
 
 ```bash
-MODEL_CHOICE=qwen
+MODEL_CHOICE=llama31_8b_it bash srce/prepare_hf_assets.sh
+MODEL_CHOICE=qwen3_8b bash srce/prepare_hf_assets.sh
+MODEL_CHOICE=gemma3_12b_it bash srce/prepare_hf_assets.sh
 ```
 
-but keep in mind Qwen has not shown useful behavioral steering so far.
+To submit a specific model on the regular GPU queue:
+
+```bash
+qsub -v MODEL_CHOICE=llama31_8b_it srce/run_phase2_activation_mistral_gpu.pbs
+qsub -v MODEL_CHOICE=qwen3_8b srce/run_phase2_activation_mistral_gpu.pbs
+```
+
+For Gemma 3 12B, prefer the 96GB queue:
+
+```bash
+qsub -v MODEL_CHOICE=gemma3_12b_it srce/run_phase2_activation_gpu_bigmem.pbs
+```
+
+Llama 3.1 may require accepting Meta's model license and having a Hugging Face
+token available in the cache/preparation environment.
 
 ## 6. Notes from the Supek docs
 
