@@ -241,21 +241,55 @@ def fallback_row(row: dict, error: str) -> dict:
 df = read_generation_files()
 print("Rows to judge:", len(df))
 
-judgments = []
+checkpoint_path = OUTPUT_DIR / "judge_checkpoint.csv"
+raw_checkpoint_path = OUTPUT_DIR / "raw_judge_outputs_checkpoint.jsonl"
+
+if checkpoint_path.exists():
+    checkpoint_df = pd.read_csv(checkpoint_path)
+    judged_ids = set(checkpoint_df["row_id"].astype(int).tolist())
+    judgments = checkpoint_df.to_dict("records")
+    print(f"Loaded checkpoint with {len(judged_ids)} judged rows from {checkpoint_path}")
+else:
+    judged_ids = set()
+    judgments = []
+
 raw_outputs = []
-records = df.to_dict("records")
+records = [row for row in df.to_dict("records") if int(row["row_id"]) not in judged_ids]
+print("Rows remaining:", len(records))
+
+
+def normalize_judgment(obj: dict, row_id: int) -> dict:
+    return {
+        "row_id": int(row_id),
+        "judge_answer_count": obj.get("answer_count", obj.get("judge_answer_count", np.nan)),
+        "judge_is_enumerated": obj.get("is_enumerated", obj.get("judge_is_enumerated", np.nan)),
+        "judge_valid_answer": obj.get("valid_answer", obj.get("judge_valid_answer", np.nan)),
+        "judge_confidence": obj.get("confidence", obj.get("judge_confidence", "")),
+        "judge_reason": obj.get("short_reason", obj.get("judge_reason", "")),
+    }
+
+
+def append_checkpoint(new_rows: list[dict]):
+    if not new_rows:
+        return
+    header = not checkpoint_path.exists()
+    pd.DataFrame(new_rows).to_csv(checkpoint_path, mode="a", header=header, index=False)
 
 for start in tqdm(range(0, len(records), CFG.batch_size), desc="judge"):
     batch = records[start : start + CFG.batch_size]
+    new_judgments = []
     try:
         parsed, raw = run_judge_batch(batch)
-        raw_outputs.append({"start": start, "row_ids": [int(x["row_id"]) for x in batch], "raw": raw})
+        raw_record = {"start": start, "row_ids": [int(x["row_id"]) for x in batch], "raw": raw}
+        raw_outputs.append(raw_record)
+        with open(raw_checkpoint_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(raw_record, ensure_ascii=False) + "\n")
         by_id = {int(obj.get("id")): obj for obj in parsed if isinstance(obj, dict) and "id" in obj}
         for row in batch:
             judgment = by_id.get(int(row["row_id"]))
             if judgment is None:
                 judgment = fallback_row(row, "missing id in judge output")
-            judgments.append(judgment)
+            new_judgments.append(normalize_judgment(judgment, int(row["row_id"])))
     except Exception as exc:
         print(f"Batch starting at {start} failed: {exc}")
         # Try one-by-one for this batch; if that still fails, keep an explicit
@@ -263,23 +297,21 @@ for start in tqdm(range(0, len(records), CFG.batch_size), desc="judge"):
         for row in batch:
             try:
                 parsed, raw = run_judge_batch([row])
-                raw_outputs.append({"start": int(row["row_id"]), "row_ids": [int(row["row_id"])], "raw": raw})
-                judgments.append(parsed[0] if parsed else fallback_row(row, "empty one-row output"))
+                raw_record = {"start": int(row["row_id"]), "row_ids": [int(row["row_id"])], "raw": raw}
+                raw_outputs.append(raw_record)
+                with open(raw_checkpoint_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(raw_record, ensure_ascii=False) + "\n")
+                judgment = parsed[0] if parsed else fallback_row(row, "empty one-row output")
+                new_judgments.append(normalize_judgment(judgment, int(row["row_id"])))
             except Exception as single_exc:
-                judgments.append(fallback_row(row, str(single_exc)))
+                new_judgments.append(normalize_judgment(fallback_row(row, str(single_exc)), int(row["row_id"])))
+
+    judgments.extend(new_judgments)
+    append_checkpoint(new_judgments)
 
 judge_df = pd.DataFrame(judgments)
-judge_df = judge_df.rename(
-    columns={
-        "answer_count": "judge_answer_count",
-        "is_enumerated": "judge_is_enumerated",
-        "valid_answer": "judge_valid_answer",
-        "confidence": "judge_confidence",
-        "short_reason": "judge_reason",
-    }
-)
-judge_df["row_id"] = judge_df["id"].astype(int)
-judge_df = judge_df.drop(columns=["id"], errors="ignore")
+judge_df["row_id"] = judge_df["row_id"].astype(int)
+judge_df = judge_df.drop_duplicates(subset=["row_id"], keep="last")
 
 merged = df.merge(judge_df, on="row_id", how="left")
 merged["judge_answer_count"] = pd.to_numeric(merged["judge_answer_count"], errors="coerce")
