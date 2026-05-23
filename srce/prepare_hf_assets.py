@@ -15,6 +15,10 @@ MODEL_CONFIGS = {
 }
 
 
+def hf_token() -> str | None:
+    return os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+
+
 def build_webq_csv(output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     output_csv = output_dir / "df_webq_balanced.csv"
@@ -57,7 +61,7 @@ def build_webq_csv(output_dir: Path) -> Path:
 
 def cache_model(model_name: str):
     print(f"Caching model snapshot: {model_name}")
-    snapshot_download(repo_id=model_name, resume_download=True)
+    snapshot_download(repo_id=model_name, resume_download=True, token=hf_token())
     print("Model snapshot cached.")
 
 

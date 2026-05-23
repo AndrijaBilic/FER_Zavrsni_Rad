@@ -39,7 +39,27 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 Then open a new shell or source your shell profile and rerun the setup script.
 
-## 3. First debug run: gpu-test queue
+## 3. Hugging Face access token for gated models
+
+Llama and Gemma checkpoints are gated on Hugging Face. After your account has
+accepted the model license, create a local token file in the repo root on SRCE:
+
+```bash
+cd ~/andrija/enumerability-steering
+printf '%s\n' 'hf_your_token_here' > .hf_token
+chmod 600 .hf_token
+```
+
+`.hf_token` is ignored by git. The setup and PBS scripts automatically export it
+as `HF_TOKEN`/`HUGGING_FACE_HUB_TOKEN` when it exists.
+
+You can also avoid a file and pass the token only for one command:
+
+```bash
+HF_TOKEN=hf_your_token_here MODEL_CHOICE=llama31_8b_it bash srce/prepare_hf_assets.sh
+```
+
+## 4. First debug run: gpu-test queue
 
 Before submitting a PBS job, prepare Hugging Face assets from a node with
 internet access:
@@ -80,7 +100,7 @@ cd "$PBS_O_WORKDIR"
 
 That keeps outputs inside this project directory.
 
-## 4. Main run: gpu queue
+## 5. Main run: gpu queue
 
 Once the test job works, submit:
 

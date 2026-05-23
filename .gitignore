@@ -1,5 +1,7 @@
 .venv/
 .cache/
+.hf_token
+hf_token.txt
 outputs/
 analysis_outputs/
 gemma_judge/

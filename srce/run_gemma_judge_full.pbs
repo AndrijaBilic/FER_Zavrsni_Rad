@@ -27,6 +27,8 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
 
+source srce/load_hf_token.sh
+
 export MODEL_CHOICE="${MODEL_CHOICE:-mistral}"
 export DRIVE_PATH="$PBS_O_WORKDIR/outputs"
 export ARTIFACT_SUBDIR="phase2_activation_steering_enumerability"

@@ -24,4 +24,6 @@ export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$HF_HOME/datasets}"
 
 mkdir -p "$DRIVE_PATH" "$HF_HOME" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE"
 
+source srce/load_hf_token.sh
+
 .venv/bin/python srce/prepare_hf_assets.py

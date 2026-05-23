@@ -317,12 +317,17 @@ def dtype_from_name(name: str):
     }[name]
 
 
+def hf_token() -> str | None:
+    return os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+
+
 def load_model_and_tokenizer(cfg: Phase2Config):
     offline = os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1"
     tokenizer = AutoTokenizer.from_pretrained(
         cfg.model_name,
         trust_remote_code=True,
         local_files_only=offline,
+        token=hf_token(),
     )
     tokenizer.padding_side = "left"
     if tokenizer.pad_token is None:
@@ -345,6 +350,7 @@ def load_model_and_tokenizer(cfg: Phase2Config):
         quantization_config=quant_config,
         low_cpu_mem_usage=cfg.low_cpu_mem_usage,
         local_files_only=offline,
+        token=hf_token(),
     ).eval()
     model.config.output_hidden_states = False
     model.requires_grad_(False)

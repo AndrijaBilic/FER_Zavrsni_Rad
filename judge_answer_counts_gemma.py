@@ -73,12 +73,17 @@ def dtype_from_name(name: str):
     }[name]
 
 
+def hf_token() -> str | None:
+    return os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+
+
 def load_judge():
     offline = os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1"
     tokenizer = AutoTokenizer.from_pretrained(
         CFG.judge_model,
         trust_remote_code=True,
         local_files_only=offline,
+        token=hf_token(),
     )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -107,6 +112,7 @@ def load_judge():
         quantization_config=quant_config,
         low_cpu_mem_usage=True,
         local_files_only=offline,
+        token=hf_token(),
     ).eval()
     model.requires_grad_(False)
     return model, tokenizer
