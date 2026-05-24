@@ -321,6 +321,34 @@ def hf_token() -> str | None:
     return os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
 
 
+def get_text_config(model):
+    """Return the decoder/text config for plain and wrapper-style CausalLMs."""
+    cfg = model.config
+    for attr in ("text_config", "language_config"):
+        nested = getattr(cfg, attr, None)
+        if nested is not None:
+            return nested
+    return cfg
+
+
+def get_num_hidden_layers(model) -> int:
+    text_cfg = get_text_config(model)
+    for attr in ("num_hidden_layers", "n_layer", "num_layers"):
+        value = getattr(text_cfg, attr, None)
+        if value is not None:
+            return int(value)
+    raise AttributeError(f"Could not find hidden-layer count in {type(text_cfg).__name__}")
+
+
+def get_hidden_size(model) -> int:
+    text_cfg = get_text_config(model)
+    for attr in ("hidden_size", "n_embd", "d_model"):
+        value = getattr(text_cfg, attr, None)
+        if value is not None:
+            return int(value)
+    raise AttributeError(f"Could not find hidden size in {type(text_cfg).__name__}")
+
+
 def load_model_and_tokenizer(cfg: Phase2Config):
     offline = os.environ.get("HF_HUB_OFFLINE") == "1" or os.environ.get("TRANSFORMERS_OFFLINE") == "1"
     tokenizer = AutoTokenizer.from_pretrained(
@@ -359,18 +387,21 @@ def load_model_and_tokenizer(cfg: Phase2Config):
 
 model, tokenizer = load_model_and_tokenizer(CFG)
 device = next(model.parameters()).device
+N_LAYERS = get_num_hidden_layers(model)
+HIDDEN_SIZE = get_hidden_size(model)
 print(f"Loaded {CFG.model_name} on {device}")
-print(f"Layers: {model.config.num_hidden_layers}, hidden size: {model.config.hidden_size}")
+print(f"Layers: {N_LAYERS}, hidden size: {HIDDEN_SIZE}")
 
 
 def resolve_candidate_layers(cfg: Phase2Config, n_layers: int) -> list[int]:
     if cfg.candidate_layers is not None:
-        return sorted(set(int(layer) for layer in cfg.candidate_layers))
+        layers = sorted(set(int(layer) for layer in cfg.candidate_layers))
+        return [layer for layer in layers if 0 <= layer < n_layers]
     layers = [int(round(frac * (n_layers - 1))) for frac in cfg.layer_fractions]
     return sorted(set(max(0, min(n_layers - 1, layer)) for layer in layers))
 
 
-SELECT_LAYERS = resolve_candidate_layers(CFG, model.config.num_hidden_layers)
+SELECT_LAYERS = resolve_candidate_layers(CFG, N_LAYERS)
 print("Candidate layers:", SELECT_LAYERS)
 
 
@@ -465,9 +496,24 @@ def add_hooks(module_forward_pre_hooks, module_forward_hooks=()):
 
 
 def get_block_modules(model):
-    if hasattr(model, "model") and hasattr(model.model, "layers"):
-        return model.model.layers
-    raise ValueError("Could not find transformer blocks at model.model.layers")
+    module = model
+    candidate_paths = (
+        ("model", "layers"),
+        ("language_model", "model", "layers"),
+        ("language_model", "layers"),
+        ("model", "language_model", "layers"),
+        ("model", "decoder", "layers"),
+    )
+    for path in candidate_paths:
+        module = model
+        for attr in path:
+            module = getattr(module, attr, None)
+            if module is None:
+                break
+        if module is not None:
+            print("Transformer block path:", ".".join(path))
+            return module
+    raise ValueError("Could not find transformer blocks in known decoder module paths")
 
 
 BLOCKS = get_block_modules(model)
@@ -516,7 +562,7 @@ def get_mean_activations(
     batch_size: int,
 ) -> torch.Tensor:
     n_positions = len(positions)
-    d_model = model.config.hidden_size
+    d_model = HIDDEN_SIZE
     n_samples = len(instructions)
 
     cache = torch.zeros(

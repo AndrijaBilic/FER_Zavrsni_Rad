@@ -3,6 +3,7 @@
 .hf_token
 hf_token.txt
 outputs/
+srce_outputs/
 analysis_outputs/
 gemma_judge/
 unanswerability-directions/
