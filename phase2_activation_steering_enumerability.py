@@ -520,7 +520,18 @@ BLOCKS = get_block_modules(model)
 
 
 def normalize_vector(vec: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+    vec = torch.nan_to_num(vec, nan=0.0, posinf=0.0, neginf=0.0)
     return vec / (vec.norm(dim=-1, keepdim=True) + eps)
+
+
+def finite_numpy(values: Sequence[float] | np.ndarray, name: str) -> np.ndarray:
+    arr = np.asarray(values, dtype=np.float64)
+    mask = np.isfinite(arr)
+    if mask.all():
+        return arr
+    replacement = float(np.median(arr[mask])) if mask.any() else 0.0
+    print(f"Warning: replacing {(~mask).sum()} non-finite values in {name} with {replacement}.")
+    return np.where(mask, arr, replacement)
 
 
 def make_activation_addition_pre_hook(
@@ -616,6 +627,7 @@ def type_logit_scores(
     batch_size: int = 4,
 ) -> torch.Tensor:
     scores = torch.empty(len(instructions), dtype=torch.float32, device=device)
+    nonfinite_logits = 0
 
     for start in range(0, len(instructions), batch_size):
         batch = instructions[start : start + batch_size]
@@ -627,15 +639,25 @@ def type_logit_scores(
                 use_cache=False,
             ).logits[:, -1, :]
 
-        probs = torch.softmax(logits.float(), dim=-1)
-        p_multiple = probs[:, MULTIPLE_TOKS].sum(dim=-1).clamp_min(1e-12)
-        p_single = probs[:, SINGLE_TOKS].sum(dim=-1).clamp_min(1e-12)
-        scores[start : start + len(batch)] = torch.log(p_multiple) - torch.log(p_single)
+        logits = logits.float()
+        nonfinite_logits += int((~torch.isfinite(logits)).sum().item())
+        logits = torch.nan_to_num(logits, nan=-1e9, posinf=1e9, neginf=-1e9)
 
+        # The full-vocabulary normalizer cancels, so this is equivalent to
+        # log p(multiple variants) - log p(single variants), but more stable.
+        log_multiple = torch.logsumexp(logits[:, MULTIPLE_TOKS], dim=-1)
+        log_single = torch.logsumexp(logits[:, SINGLE_TOKS], dim=-1)
+        scores[start : start + len(batch)] = torch.nan_to_num(log_multiple - log_single, nan=0.0)
+
+    if nonfinite_logits:
+        print(f"Warning: replaced {nonfinite_logits} non-finite logits while scoring {len(instructions)} prompts.")
     return scores
 
 
-baseline_val_scores = type_logit_scores(val_prompts, batch_size=CFG.batch_size_scoring).detach().cpu().numpy()
+baseline_val_scores = finite_numpy(
+    type_logit_scores(val_prompts, batch_size=CFG.batch_size_scoring).detach().cpu().numpy(),
+    "baseline_val_scores",
+)
 print(
     "Baseline validation token score:",
     float(np.mean(baseline_val_scores)),
@@ -658,8 +680,9 @@ def select_direction_by_steering(candidate_dirs: torch.Tensor):
                 fwd_pre_hooks=[(BLOCKS[layer], hook)],
                 batch_size=CFG.batch_size_scoring,
             )
-            mean_score = scores.mean().item()
-            auc = roc_auc_score(val_df["label"], scores.detach().cpu().numpy())
+            score_np = finite_numpy(scores.detach().cpu().numpy(), f"val_scores_layer_{layer}_pos_{pos}")
+            mean_score = float(np.mean(score_np))
+            auc = roc_auc_score(val_df["label"], score_np)
             row = {
                 "position": pos,
                 "position_index": pos_idx,
@@ -711,7 +734,8 @@ def hidden_vectors_at(prompts: Sequence[str], pos: int, layer: int, batch_size: 
 def projection_scores(prompts: Sequence[str], direction: torch.Tensor, pos: int, layer: int) -> np.ndarray:
     direction = normalize_vector(direction.float()).cpu()
     vectors = hidden_vectors_at(prompts, pos=pos, layer=layer, batch_size=CFG.batch_size_scoring)
-    return (vectors @ direction).numpy()
+    scores = (torch.nan_to_num(vectors.float(), nan=0.0, posinf=0.0, neginf=0.0) @ direction).numpy()
+    return finite_numpy(scores, f"projection_scores_layer_{layer}_pos_{pos}")
 
 
 val_proj_scores = projection_scores(
