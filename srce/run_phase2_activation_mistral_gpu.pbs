@@ -34,7 +34,7 @@ source srce/load_hf_token.sh
 #   qsub -v MODEL_CHOICE=llama31_8b_it srce/run_phase2_activation_mistral_gpu.pbs
 export MODEL_CHOICE="${MODEL_CHOICE:-mistral}"
 export DRIVE_PATH="$PBS_O_WORKDIR/outputs"
-export ARTIFACT_SUBDIR="phase2_activation_steering_enumerability"
+export ARTIFACT_SUBDIR="${ARTIFACT_SUBDIR:-phase2_activation_steering_enumerability}"
 export PHASE1_CSV="$PBS_O_WORKDIR/outputs/df_webq_balanced.csv"
 
 # Larger confirmation run. Adjust these upward only after the gpu-test script is

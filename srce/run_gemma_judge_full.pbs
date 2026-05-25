@@ -31,7 +31,7 @@ source srce/load_hf_token.sh
 
 export MODEL_CHOICE="${MODEL_CHOICE:-mistral}"
 export DRIVE_PATH="$PBS_O_WORKDIR/outputs"
-export ARTIFACT_SUBDIR="phase2_activation_steering_enumerability"
+export ARTIFACT_SUBDIR="${ARTIFACT_SUBDIR:-phase2_activation_steering_enumerability}"
 export JUDGE_MODEL="${JUDGE_MODEL:-google/gemma-4-31B-it}"
 export JUDGE_OUTPUT_SUBDIR="gemma_judge"
 export JUDGE_BATCH_SIZE=5

@@ -111,6 +111,7 @@ class Phase2Config:
     batch_size_generation: int = 2
     max_new_tokens: int = 64
 
+    model_quantization: str = "4bit"
     use_4bit: bool = True
     use_double_quant: bool = True
     low_cpu_mem_usage: bool = True
@@ -165,6 +166,16 @@ if os.environ.get("DRIVE_PATH"):
     CFG.drive_path = os.environ["DRIVE_PATH"]
 if os.environ.get("PHASE1_CSV"):
     CFG.phase1_csv = os.environ["PHASE1_CSV"]
+if os.environ.get("MODEL_QUANTIZATION"):
+    CFG.model_quantization = os.environ["MODEL_QUANTIZATION"].strip().lower()
+    CFG.use_4bit = CFG.model_quantization in {"4bit", "nf4"}
+if os.environ.get("USE_4BIT"):
+    CFG.use_4bit = os.environ["USE_4BIT"].strip() not in {"0", "false", "False", "no", "NO"}
+    CFG.model_quantization = "4bit" if CFG.use_4bit else "none"
+if os.environ.get("USE_DOUBLE_QUANT"):
+    CFG.use_double_quant = os.environ["USE_DOUBLE_QUANT"].strip() not in {"0", "false", "False", "no", "NO"}
+if os.environ.get("TORCH_DTYPE"):
+    CFG.torch_dtype = os.environ["TORCH_DTYPE"].strip()
 if os.environ.get("BATCH_SIZE_ACTIVATIONS"):
     CFG.batch_size_activations = int(os.environ["BATCH_SIZE_ACTIVATIONS"])
 if os.environ.get("BATCH_SIZE_SCORING"):
@@ -362,13 +373,20 @@ def load_model_and_tokenizer(cfg: Phase2Config):
         tokenizer.pad_token = tokenizer.eos_token
 
     quant_config = None
-    if cfg.use_4bit:
+    quantization = cfg.model_quantization.lower()
+    if quantization in {"4bit", "nf4"}:
         quant_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=dtype_from_name(cfg.torch_dtype),
             bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=cfg.use_double_quant,
         )
+    elif quantization in {"8bit", "int8"}:
+        quant_config = BitsAndBytesConfig(load_in_8bit=True)
+    elif quantization in {"none", "bf16", "float16", "fp16"}:
+        quant_config = None
+    else:
+        raise ValueError("MODEL_QUANTIZATION must be one of: 4bit, int8, none")
 
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model_name,

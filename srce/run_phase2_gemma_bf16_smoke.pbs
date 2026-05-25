@@ -1,14 +1,14 @@
 #!/bin/bash
-#PBS -N enum-mistral-test
-#PBS -q gpu-test
+#PBS -N enum-gemma-bf16-smoke
+#PBS -q gpu-bigmem
 #PBS -l select=1:ncpus=8:ngpus=1:mem=120gb
-#PBS -l walltime=01:00:00
+#PBS -l walltime=02:00:00
 #PBS -j oe
 
 set -euo pipefail
 cd "$PBS_O_WORKDIR"
 
-echo "Job started: $(date)"
+echo "Gemma bf16 smoke started: $(date)"
 echo "Host: $(hostname)"
 echo "Workdir: $PBS_O_WORKDIR"
 echo "Job id: ${PBS_JOBID:-unknown}"
@@ -30,23 +30,26 @@ export HF_DATASETS_OFFLINE=1
 mkdir -p "$HF_HOME" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE" outputs
 source srce/load_hf_token.sh
 
-# Phase-2 activation-steering experiment settings. Override at submission with:
-#   qsub -v MODEL_CHOICE=llama31_8b_it srce/run_phase2_activation_mistral_gpu_test.pbs
-export MODEL_CHOICE="${MODEL_CHOICE:-mistral}"
+export MODEL_CHOICE=gemma3_12b_it
+export MODEL_QUANTIZATION=none
+export USE_4BIT=0
+export TORCH_DTYPE=bfloat16
 export DRIVE_PATH="$PBS_O_WORKDIR/outputs"
-export ARTIFACT_SUBDIR="${ARTIFACT_SUBDIR:-phase2_activation_steering_enumerability}"
+export ARTIFACT_SUBDIR="phase2_activation_steering_enumerability_gemma_bf16_smoke"
 export PHASE1_CSV="$PBS_O_WORKDIR/outputs/df_webq_balanced.csv"
 
-# Keep this test queue run moderate. It should finish within gpu-test limits
-# after the model/dependencies are already cached.
-export MAX_TRAIN_PER_CLASS=600
-export MAX_VAL_PER_CLASS=200
-export MAX_TEST_PER_CLASS=200
-export MAX_MANUAL_QUESTIONS=10
-export WEBQ_EVAL_PER_CLASS=25
-export MAX_OOD_QUESTIONS=12
-export ALPHAS="-1.5,-1.0,-0.5,0.0,0.5,1.0,1.5"
+export MAX_TRAIN_PER_CLASS=100
+export MAX_VAL_PER_CLASS=50
+export MAX_TEST_PER_CLASS=50
+export MAX_MANUAL_QUESTIONS=4
+export WEBQ_EVAL_PER_CLASS=5
+export MAX_OOD_QUESTIONS=4
+export ALPHAS="-1.0,0.0,1.0"
+export BATCH_SIZE_ACTIVATIONS=1
+export BATCH_SIZE_SCORING=1
+export BATCH_SIZE_GENERATION=1
+export MAX_NEW_TOKENS=64
 
 .venv/bin/python phase2_activation_steering_enumerability.py
 
-echo "Job finished: $(date)"
+echo "Gemma bf16 smoke finished: $(date)"

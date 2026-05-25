@@ -206,6 +206,11 @@ MODEL_CHOICE=mistral
 MODEL_CHOICE=llama31_8b_it
 MODEL_CHOICE=qwen3_8b
 MODEL_CHOICE=gemma3_12b_it
+MODEL_QUANTIZATION=4bit
+MODEL_QUANTIZATION=int8
+MODEL_QUANTIZATION=none
+TORCH_DTYPE=float16
+TORCH_DTYPE=bfloat16
 MAX_TRAIN_PER_CLASS=600
 MAX_VAL_PER_CLASS=200
 MAX_TEST_PER_CLASS=200
@@ -238,6 +243,21 @@ For Gemma 3 12B, prefer the 96GB queue:
 
 ```bash
 qsub -v MODEL_CHOICE=gemma3_12b_it srce/run_phase2_activation_gpu_bigmem.pbs
+```
+
+The 4-bit Gemma 3 12B run can be numerically unstable. Use the bf16 smoke test
+first:
+
+```bash
+qsub srce/run_phase2_gemma_bf16_smoke.pbs
+```
+
+If the smoke-test log has finite AUC values and non-empty generations, run the
+full bf16 job and then judge that separate artifact folder:
+
+```bash
+act_job=$(qsub srce/run_phase2_gemma_bf16_full.pbs)
+qsub -v MODEL_CHOICE=gemma3_12b_it,ARTIFACT_SUBDIR=phase2_activation_steering_enumerability_gemma_bf16 -W depend=afterok:${act_job} srce/run_gemma_judge_full.pbs
 ```
 
 Llama 3.1 may require accepting Meta's model license and having a Hugging Face
