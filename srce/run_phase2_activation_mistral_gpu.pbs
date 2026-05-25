@@ -39,13 +39,13 @@ export PHASE1_CSV="$PBS_O_WORKDIR/outputs/df_webq_balanced.csv"
 
 # Larger confirmation run. Adjust these upward only after the gpu-test script is
 # known to work on Supek.
-export MAX_TRAIN_PER_CLASS=1000
-export MAX_VAL_PER_CLASS=300
-export MAX_TEST_PER_CLASS=300
-export MAX_MANUAL_QUESTIONS=10
-export WEBQ_EVAL_PER_CLASS=50
-export MAX_OOD_QUESTIONS=12
-export ALPHAS="-1.5,-1.0,-0.5,0.0,0.5,1.0,1.5"
+export MAX_TRAIN_PER_CLASS="${MAX_TRAIN_PER_CLASS:-1000}"
+export MAX_VAL_PER_CLASS="${MAX_VAL_PER_CLASS:-300}"
+export MAX_TEST_PER_CLASS="${MAX_TEST_PER_CLASS:-300}"
+export MAX_MANUAL_QUESTIONS="${MAX_MANUAL_QUESTIONS:-10}"
+export WEBQ_EVAL_PER_CLASS="${WEBQ_EVAL_PER_CLASS:-50}"
+export MAX_OOD_QUESTIONS="${MAX_OOD_QUESTIONS:-12}"
+export ALPHAS="${ALPHAS:--1.5,-1.0,-0.5,0.0,0.5,1.0,1.5}"
 
 .venv/bin/python phase2_activation_steering_enumerability.py
 

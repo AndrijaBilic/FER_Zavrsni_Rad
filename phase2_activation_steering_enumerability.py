@@ -184,6 +184,8 @@ if os.environ.get("BATCH_SIZE_GENERATION"):
     CFG.batch_size_generation = int(os.environ["BATCH_SIZE_GENERATION"])
 if os.environ.get("MAX_NEW_TOKENS"):
     CFG.max_new_tokens = int(os.environ["MAX_NEW_TOKENS"])
+if os.environ.get("STEER_ALL_POSITIONS"):
+    CFG.steer_all_positions = os.environ["STEER_ALL_POSITIONS"].strip() in {"1", "true", "True", "yes", "YES"}
 
 ARTIFACT_DIR = Path(CFG.drive_path) / CFG.artifact_subdir / CFG.model_key
 ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
