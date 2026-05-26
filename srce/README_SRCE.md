@@ -208,6 +208,8 @@ MODEL_CHOICE=llama31_8b_it
 MODEL_CHOICE=qwen3_8b_base
 MODEL_CHOICE=qwen3_8b
 MODEL_CHOICE=gemma3_12b_it
+PROMPT_VARIANT=zero_shot_label
+PROMPT_VARIANT=few_shot_label
 MODEL_QUANTIZATION=4bit
 MODEL_QUANTIZATION=int8
 MODEL_QUANTIZATION=none
@@ -268,6 +270,19 @@ qsub -v MODEL_CHOICE=gemma3_12b_it,ARTIFACT_SUBDIR=phase2_activation_steering_en
 
 Llama 3.1 may require accepting Meta's model license and having a Hugging Face
 token available in the cache/preparation environment.
+
+For the Llama base few-shot prompt diagnostic, use:
+
+```bash
+qsub srce/run_phase2_llama_base_fewshot_smoke.pbs
+```
+
+If that smoke run fixes the `Answer type` collapse and produces useful
+generation changes, judge the separate output folder:
+
+```bash
+qsub -v MODEL_CHOICE=llama31_8b_base,ARTIFACT_SUBDIR=phase2_activation_steering_enumerability_llama_base_fewshot_smoke srce/run_gemma_judge_full.pbs
+```
 
 ## 6. Notes from the Supek docs
 

@@ -106,6 +106,7 @@ class Phase2Config:
     # "chat" uses tokenizer.apply_chat_template; "plain" sends the instruction
     # directly. Mistral-7B-v0.1 is a base model, so plain prompts are safer.
     prompt_style: str = MODEL_CONFIGS[MODEL_CHOICE]["prompt_style"]
+    prompt_variant: str = "zero_shot_label"
     drive_path: str = "/content/drive/MyDrive/thesis_probing"
     artifact_subdir: str = "phase2_activation_steering_enumerability"
     phase1_csv: str | None = None
@@ -176,6 +177,8 @@ if os.environ.get("DRIVE_PATH"):
     CFG.drive_path = os.environ["DRIVE_PATH"]
 if os.environ.get("PHASE1_CSV"):
     CFG.phase1_csv = os.environ["PHASE1_CSV"]
+if os.environ.get("PROMPT_VARIANT"):
+    CFG.prompt_variant = os.environ["PROMPT_VARIANT"].strip()
 if os.environ.get("MODEL_QUANTIZATION"):
     CFG.model_quantization = os.environ["MODEL_QUANTIZATION"].strip().lower()
     CFG.use_4bit = CFG.model_quantization in {"4bit", "nf4"}
@@ -226,8 +229,36 @@ Question: {question}
 Answer type:"""
 
 
+FEW_SHOT_LABEL_PROMPT = """Decide whether each question has one correct answer or multiple correct answers, then answer it.
+
+Question: What is the capital of France?
+Answer type: single
+Answer: Paris
+
+Question: Which countries border Germany?
+Answer type: multiple
+Answer: Denmark, Poland, Czech Republic, Austria, Switzerland, France, Luxembourg, Belgium, Netherlands
+
+Question: Who wrote Pride and Prejudice?
+Answer type: single
+Answer: Jane Austen
+
+Question: Which colors are in the French flag?
+Answer type: multiple
+Answer: blue, white, red
+
+Question: {question}
+Answer type:"""
+
+
 def format_enumerability_instruction(question: str) -> str:
-    return ENUMERABILITY_PROMPT.format(question=question.strip())
+    if CFG.prompt_variant == "zero_shot_label":
+        template = ENUMERABILITY_PROMPT
+    elif CFG.prompt_variant == "few_shot_label":
+        template = FEW_SHOT_LABEL_PROMPT
+    else:
+        raise ValueError("PROMPT_VARIANT must be one of: zero_shot_label, few_shot_label")
+    return template.format(question=question.strip())
 
 
 def load_or_build_webquestions(cfg: Phase2Config) -> pd.DataFrame:
