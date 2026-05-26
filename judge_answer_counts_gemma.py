@@ -16,7 +16,9 @@ STEERING_MODEL_KEYS = {
     "qwen": "qwen3_4b",
     "mistral": "mistral_7b",
     "llama31_8b_it": "llama31_8b_it",
+    "llama31_8b_base": "llama31_8b_base",
     "qwen3_8b": "qwen3_8b",
+    "qwen3_8b_base": "qwen3_8b_base",
     "gemma3_12b_it": "gemma3_12b_it",
 }
 

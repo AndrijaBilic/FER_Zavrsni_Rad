@@ -48,7 +48,7 @@ except Exception:
 # %%
 # -- Model Selection ---------------------------------------------------------
 # Match the Phase 1 notebook: change this single value to switch models.
-MODEL_CHOICE = os.environ.get("MODEL_CHOICE", "qwen")   # e.g. mistral, llama31_8b_it, qwen3_8b, gemma3_12b_it
+MODEL_CHOICE = os.environ.get("MODEL_CHOICE", "qwen")   # e.g. mistral, llama31_8b_base, llama31_8b_it, qwen3_8b_base, qwen3_8b, gemma3_12b_it
 
 MODEL_CONFIGS = {
     "qwen": {
@@ -69,12 +69,22 @@ MODEL_CONFIGS = {
         "prompt_style": "chat",
         "candidate_layers": list(range(16, 31)),
     },
-    # Qwen 3 has an 8B open checkpoint; if you meant a different exact "Qwen
-    # 3.5 9B" checkpoint, change only model_name/model_key here.
+    "llama31_8b_base": {
+        "model_name": "meta-llama/Llama-3.1-8B",
+        "model_key": "llama31_8b_base",
+        "prompt_style": "plain",
+        "candidate_layers": list(range(16, 31)),
+    },
     "qwen3_8b": {
         "model_name": "Qwen/Qwen3-8B",
         "model_key": "qwen3_8b",
         "prompt_style": "chat",
+        "candidate_layers": list(range(16, 35)),
+    },
+    "qwen3_8b_base": {
+        "model_name": "Qwen/Qwen3-8B-Base",
+        "model_key": "qwen3_8b_base",
+        "prompt_style": "plain",
         "candidate_layers": list(range(16, 35)),
     },
     "gemma3_12b_it": {

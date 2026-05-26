@@ -203,7 +203,9 @@ Useful variables:
 
 ```bash
 MODEL_CHOICE=mistral
+MODEL_CHOICE=llama31_8b_base
 MODEL_CHOICE=llama31_8b_it
+MODEL_CHOICE=qwen3_8b_base
 MODEL_CHOICE=qwen3_8b
 MODEL_CHOICE=gemma3_12b_it
 MODEL_QUANTIZATION=4bit
@@ -228,7 +230,9 @@ To cache a model before submitting an offline PBS job:
 
 ```bash
 MODEL_CHOICE=llama31_8b_it bash srce/prepare_hf_assets.sh
+MODEL_CHOICE=llama31_8b_base bash srce/prepare_hf_assets.sh
 MODEL_CHOICE=qwen3_8b bash srce/prepare_hf_assets.sh
+MODEL_CHOICE=qwen3_8b_base bash srce/prepare_hf_assets.sh
 MODEL_CHOICE=gemma3_12b_it bash srce/prepare_hf_assets.sh
 ```
 
@@ -236,7 +240,9 @@ To submit a specific model on the regular GPU queue:
 
 ```bash
 qsub -v MODEL_CHOICE=llama31_8b_it srce/run_phase2_activation_mistral_gpu.pbs
+qsub -v MODEL_CHOICE=llama31_8b_base srce/run_phase2_activation_mistral_gpu.pbs
 qsub -v MODEL_CHOICE=qwen3_8b srce/run_phase2_activation_mistral_gpu.pbs
+qsub -v MODEL_CHOICE=qwen3_8b_base srce/run_phase2_activation_mistral_gpu.pbs
 ```
 
 For Gemma 3 12B, prefer the 96GB queue:
