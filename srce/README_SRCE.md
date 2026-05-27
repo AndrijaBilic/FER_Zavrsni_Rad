@@ -284,6 +284,13 @@ generation changes, judge the separate output folder:
 qsub -v MODEL_CHOICE=llama31_8b_base,ARTIFACT_SUBDIR=phase2_activation_steering_enumerability_llama_base_fewshot_smoke srce/run_gemma_judge_full.pbs
 ```
 
+For a full Llama base few-shot run with the same prompt variant:
+
+```bash
+act_job=$(qsub srce/run_phase2_llama_base_fewshot_full.pbs)
+qsub -v MODEL_CHOICE=llama31_8b_base,ARTIFACT_SUBDIR=phase2_activation_steering_enumerability_llama_base_fewshot -W depend=afterok:${act_job} srce/run_gemma_judge_full.pbs
+```
+
 ## 6. Notes from the Supek docs
 
 - Supek uses PBS Pro, and jobs are submitted with `qsub`.
