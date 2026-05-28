@@ -43,6 +43,7 @@ class SanityConfig:
     torch_dtype: str = os.environ.get("TORCH_DTYPE", "float16")
     max_new_tokens: int = int(os.environ.get("MAX_NEW_TOKENS", "8"))
     layer: int | None = int(os.environ["SANITY_LAYER"]) if os.environ.get("SANITY_LAYER") else None
+    chat_assistant_prefill: bool = os.environ.get("CHAT_ASSISTANT_PREFILL", "1") in {"1", "true", "True", "yes", "YES"}
 
 
 CFG = SanityConfig()
@@ -142,7 +143,53 @@ def load_model_and_tokenizer():
 def format_model_prompt(tokenizer, instruction: str) -> str:
     if MODEL_CFG["prompt_style"] == "plain":
         return instruction
-    messages = [{"role": "user", "content": instruction}]
+    user_content = instruction
+    assistant_prefill = ""
+    if CFG.chat_assistant_prefill:
+        user_content = user_content.rstrip()
+        if user_content.endswith("Answer type:"):
+            user_content = user_content[: -len("Answer type:")].rstrip()
+        assistant_prefill = "Answer type:"
+
+    if assistant_prefill:
+        messages = [
+            {"role": "user", "content": user_content},
+            {"role": "assistant", "content": assistant_prefill},
+        ]
+        try:
+            return tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                continue_final_message=True,
+                enable_thinking=False,
+            )
+        except TypeError:
+            try:
+                return tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    continue_final_message=True,
+                )
+            except TypeError:
+                pass
+
+        messages = [{"role": "user", "content": user_content}]
+        try:
+            base = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+        except TypeError:
+            base = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        return base + assistant_prefill
+
+    messages = [{"role": "user", "content": user_content}]
     try:
         return tokenizer.apply_chat_template(
             messages,

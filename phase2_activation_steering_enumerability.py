@@ -107,6 +107,10 @@ class Phase2Config:
     # directly. Mistral-7B-v0.1 is a base model, so plain prompts are safer.
     prompt_style: str = MODEL_CONFIGS[MODEL_CHOICE]["prompt_style"]
     prompt_variant: str = "zero_shot_label"
+    # For chat models, the user message should not end with "Answer type:" if
+    # we want the next-token objective to score single/multiple. Instead, put
+    # that prefix inside the assistant turn and continue from it.
+    chat_assistant_prefill: bool = True
     drive_path: str = "/content/drive/MyDrive/thesis_probing"
     artifact_subdir: str = "phase2_activation_steering_enumerability"
     phase1_csv: str | None = None
@@ -184,6 +188,8 @@ if os.environ.get("PHASE1_CSV"):
     CFG.phase1_csv = os.environ["PHASE1_CSV"]
 if os.environ.get("PROMPT_VARIANT"):
     CFG.prompt_variant = os.environ["PROMPT_VARIANT"].strip()
+if os.environ.get("CHAT_ASSISTANT_PREFILL"):
+    CFG.chat_assistant_prefill = os.environ["CHAT_ASSISTANT_PREFILL"].strip() in {"1", "true", "True", "yes", "YES"}
 if os.environ.get("POSITIONS"):
     positions_env = os.environ["POSITIONS"].strip()
     if positions_env.lower() in {"auto", "none", "suffix"}:
@@ -486,7 +492,57 @@ def format_model_prompt(instruction: str) -> str:
     if CFG.prompt_style == "plain":
         return instruction
 
-    messages = [{"role": "user", "content": instruction}]
+    user_content = instruction
+    assistant_prefill = ""
+    if CFG.chat_assistant_prefill:
+        user_content = re.sub(r"\nAnswer type:\s*$", "", instruction.rstrip())
+        assistant_prefill = "Answer type:"
+
+    if assistant_prefill:
+        messages = [
+            {"role": "user", "content": user_content},
+            {"role": "assistant", "content": assistant_prefill},
+        ]
+        try:
+            # continue_final_message keeps the assistant prefix open, so the
+            # next token is the label ("single"/"multiple") rather than a fresh
+            # assistant response like "Answer".
+            return tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                continue_final_message=True,
+                enable_thinking=False,
+            )
+        except TypeError:
+            try:
+                return tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    continue_final_message=True,
+                )
+            except TypeError:
+                pass
+
+        # Older chat templates may not expose continue_final_message. In that
+        # case, append the assistant prefix immediately after the generation
+        # prompt as a conservative fallback.
+        messages = [{"role": "user", "content": user_content}]
+        try:
+            base = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+        except TypeError:
+            base = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        return base + assistant_prefill
+
+    messages = [{"role": "user", "content": user_content}]
     try:
         # Qwen3 supports disabling thinking mode. Other tokenizers may not.
         return tokenizer.apply_chat_template(
