@@ -151,6 +151,11 @@ class Phase2Config:
     # end-of-instruction position. If True, this matches the public repo hook,
     # which adds the vector at all token positions.
     steer_all_positions: bool = False
+    # During HF generate(), cached decoding calls the model again with only the
+    # newest token. The original "per_forward" behavior applies target_pos=-1 on
+    # every decoding step. "prefill_only" applies the vector only on the initial
+    # full-prompt forward, which matches the direction-selection setup.
+    generation_hook_mode: str = "per_forward"
 
 
 CFG = Phase2Config(candidate_layers=MODEL_CONFIGS[MODEL_CHOICE].get("candidate_layers"))
@@ -179,6 +184,12 @@ if os.environ.get("PHASE1_CSV"):
     CFG.phase1_csv = os.environ["PHASE1_CSV"]
 if os.environ.get("PROMPT_VARIANT"):
     CFG.prompt_variant = os.environ["PROMPT_VARIANT"].strip()
+if os.environ.get("POSITIONS"):
+    positions_env = os.environ["POSITIONS"].strip()
+    if positions_env.lower() in {"auto", "none", "suffix"}:
+        CFG.positions = None
+    else:
+        CFG.positions = tuple(int(x.strip()) for x in positions_env.split(",") if x.strip())
 if os.environ.get("MODEL_QUANTIZATION"):
     CFG.model_quantization = os.environ["MODEL_QUANTIZATION"].strip().lower()
     CFG.use_4bit = CFG.model_quantization in {"4bit", "nf4"}
@@ -199,6 +210,10 @@ if os.environ.get("MAX_NEW_TOKENS"):
     CFG.max_new_tokens = int(os.environ["MAX_NEW_TOKENS"])
 if os.environ.get("STEER_ALL_POSITIONS"):
     CFG.steer_all_positions = os.environ["STEER_ALL_POSITIONS"].strip() in {"1", "true", "True", "yes", "YES"}
+if os.environ.get("GENERATION_HOOK_MODE"):
+    CFG.generation_hook_mode = os.environ["GENERATION_HOOK_MODE"].strip()
+if CFG.generation_hook_mode not in {"per_forward", "prefill_only"}:
+    raise ValueError("GENERATION_HOOK_MODE must be one of: per_forward, prefill_only")
 
 ARTIFACT_DIR = Path(CFG.drive_path) / CFG.artifact_subdir / CFG.model_key
 ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
@@ -599,10 +614,21 @@ def make_activation_addition_pre_hook(
     vector: torch.Tensor,
     coeff: float,
     target_pos: int | None,
+    apply_once: bool = False,
+    min_seq_len: int | None = None,
 ):
     """Add coeff * vector to a layer input, either at one token position or all positions."""
+    applied = False
 
     def hook_fn(module, inputs):
+        nonlocal applied
+        if apply_once and applied:
+            return None
+
+        raw_activation = inputs[0] if isinstance(inputs, tuple) else inputs
+        if min_seq_len is not None and raw_activation.shape[1] < min_seq_len:
+            return None
+
         if isinstance(inputs, tuple):
             activation = inputs[0].clone()
             rest = inputs[1:]
@@ -615,6 +641,9 @@ def make_activation_addition_pre_hook(
             activation = activation + coeff * vec
         else:
             activation[:, target_pos, :] = activation[:, target_pos, :] + coeff * vec
+
+        if apply_once:
+            applied = True
 
         if rest is None:
             return activation
@@ -856,15 +885,7 @@ def generate_completions(
     batch_size: int,
     max_new_tokens: int,
 ) -> list[dict]:
-    hooks = []
-    if direction is not None:
-        target_pos = None if CFG.steer_all_positions else pos
-        hook = make_activation_addition_pre_hook(
-            normalize_vector(direction).to(device),
-            coeff=alpha,
-            target_pos=target_pos,
-        )
-        hooks = [(BLOCKS[layer], hook)]
+    direction_for_hook = normalize_vector(direction).to(device) if direction is not None else None
 
     generation_config = GenerationConfig(
         max_new_tokens=max_new_tokens,
@@ -877,6 +898,21 @@ def generate_completions(
     for start in tqdm(range(0, len(prompts), batch_size), desc=f"generate alpha={alpha}"):
         batch = prompts[start : start + batch_size]
         inputs = tokenize_instructions(batch).to(device)
+        hooks = []
+        if direction_for_hook is not None:
+            target_pos = None if CFG.steer_all_positions else pos
+            hook_kwargs = {}
+            if CFG.generation_hook_mode == "prefill_only":
+                # With KV cache, decoding forwards have sequence length 1. Skip
+                # them so target_pos=-1 remains the selected prompt position.
+                hook_kwargs = {"apply_once": True, "min_seq_len": 2}
+            hook = make_activation_addition_pre_hook(
+                direction_for_hook,
+                coeff=alpha,
+                target_pos=target_pos,
+                **hook_kwargs,
+            )
+            hooks = [(BLOCKS[layer], hook)]
         with torch.no_grad(), add_hooks(hooks):
             generated = model.generate(
                 input_ids=inputs.input_ids,

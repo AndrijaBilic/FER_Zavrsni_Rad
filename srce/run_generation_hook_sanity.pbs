@@ -1,0 +1,40 @@
+#!/bin/bash
+#PBS -N hook-sanity
+#PBS -q gpu-bigmem
+#PBS -l select=1:ncpus=8:ngpus=1:mem=120gb
+#PBS -l walltime=01:00:00
+#PBS -j oe
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+
+echo "Generation hook sanity started: $(date)"
+echo "Host: $(hostname)"
+echo "Workdir: $PBS_O_WORKDIR"
+echo "Job id: ${PBS_JOBID:-unknown}"
+
+if [ ! -x .venv/bin/python ]; then
+  echo "Missing .venv. Run first: bash srce/setup_uv_env.sh"
+  exit 2
+fi
+
+export PYTHONUNBUFFERED=1
+export TOKENIZERS_PARALLELISM=false
+export HF_HOME="$PBS_O_WORKDIR/.cache/huggingface"
+export TRANSFORMERS_CACHE="$HF_HOME/transformers"
+export HF_DATASETS_CACHE="$HF_HOME/datasets"
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+
+mkdir -p "$HF_HOME" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE" outputs
+source srce/load_hf_token.sh
+
+export MODEL_CHOICE="${MODEL_CHOICE:-llama31_8b_it}"
+export MODEL_QUANTIZATION="${MODEL_QUANTIZATION:-4bit}"
+export TORCH_DTYPE="${TORCH_DTYPE:-float16}"
+export MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-8}"
+
+.venv/bin/python sanity_check_generation_hook_positions.py
+
+echo "Generation hook sanity finished: $(date)"
