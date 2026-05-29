@@ -48,7 +48,7 @@ except Exception:
 # %%
 # -- Model Selection ---------------------------------------------------------
 # Match the Phase 1 notebook: change this single value to switch models.
-MODEL_CHOICE = os.environ.get("MODEL_CHOICE", "qwen")   # e.g. mistral, llama31_8b_base, llama31_8b_it, qwen3_8b_base, qwen3_8b, gemma3_12b_it
+MODEL_CHOICE = os.environ.get("MODEL_CHOICE", "qwen")   # e.g. mistral, mistral_7b_it, llama31_8b_base, llama31_8b_it, qwen3_8b_base, qwen3_8b, gemma3_12b_it
 
 MODEL_CONFIGS = {
     "qwen": {
@@ -61,6 +61,12 @@ MODEL_CONFIGS = {
         "model_name": "mistralai/Mistral-7B-v0.1",
         "model_key": "mistral_7b",
         "prompt_style": "plain",
+        "candidate_layers": list(range(18, 29)),
+    },
+    "mistral_7b_it": {
+        "model_name": "mistralai/Mistral-7B-Instruct-v0.1",
+        "model_key": "mistral_7b_it",
+        "prompt_style": "chat",
         "candidate_layers": list(range(18, 29)),
     },
     "llama31_8b_it": {

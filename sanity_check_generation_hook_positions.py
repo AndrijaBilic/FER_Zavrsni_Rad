@@ -13,6 +13,11 @@ MODEL_CONFIGS = {
         "prompt_style": "plain",
         "default_layer": 18,
     },
+    "mistral_7b_it": {
+        "model_name": "mistralai/Mistral-7B-Instruct-v0.1",
+        "prompt_style": "chat",
+        "default_layer": 18,
+    },
     "llama31_8b_it": {
         "model_name": "meta-llama/Llama-3.1-8B-Instruct",
         "prompt_style": "chat",

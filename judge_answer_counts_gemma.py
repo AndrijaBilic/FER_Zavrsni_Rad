@@ -15,6 +15,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 STEERING_MODEL_KEYS = {
     "qwen": "qwen3_4b",
     "mistral": "mistral_7b",
+    "mistral_7b_it": "mistral_7b_it",
     "llama31_8b_it": "llama31_8b_it",
     "llama31_8b_base": "llama31_8b_base",
     "qwen3_8b": "qwen3_8b",
