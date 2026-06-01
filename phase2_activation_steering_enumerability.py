@@ -143,6 +143,10 @@ class Phase2Config:
     # For the pilot run, use only -1. Setting this to None does the fuller paper-
     # style sweep over all trailing template positions.
     positions: tuple[int, ...] | None = (-1,)
+    # Used only when positions is None. "suffix" sweeps trailing chat-template
+    # positions; "question_final" targets the last token of the actual question
+    # before the fixed answer-format/chat-template suffix.
+    position_mode: str = "suffix"
 
     # Restrict candidate direction layers for the first run. None means all
     # layers. Fractions are converted after loading the model.
@@ -200,8 +204,13 @@ if os.environ.get("POSITIONS"):
     positions_env = os.environ["POSITIONS"].strip()
     if positions_env.lower() in {"auto", "none", "suffix"}:
         CFG.positions = None
+        CFG.position_mode = "suffix"
+    elif positions_env.lower() in {"question", "question_final", "semantic_tail"}:
+        CFG.positions = None
+        CFG.position_mode = "question_final"
     else:
         CFG.positions = tuple(int(x.strip()) for x in positions_env.split(",") if x.strip())
+        CFG.position_mode = "explicit"
 if os.environ.get("MODEL_QUANTIZATION"):
     CFG.model_quantization = os.environ["MODEL_QUANTIZATION"].strip().lower()
     CFG.use_4bit = CFG.model_quantization in {"4bit", "nf4"}
@@ -590,7 +599,35 @@ def infer_end_of_instruction_positions() -> list[int]:
     return list(range(-len(suffix_toks), 0))
 
 
-POSITIONS = list(CFG.positions) if CFG.positions is not None else infer_end_of_instruction_positions()
+def infer_question_final_position() -> list[int]:
+    sentinel = "<<<QUESTION_SENTINEL>>>"
+    instruction = format_enumerability_instruction(sentinel)
+    formatted = format_model_prompt(instruction)
+    if sentinel not in formatted:
+        print("Could not isolate question sentinel; falling back to the final prompt token.")
+        return [-1]
+
+    suffix_after_question = formatted.split(sentinel, 1)[1]
+    suffix_toks = tokenizer.encode(suffix_after_question, add_special_tokens=False)
+    rel_pos = -len(suffix_toks) - 1
+
+    probe_ids = tokenizer.encode(formatted, add_special_tokens=False)
+    probe_tokens = [tokenizer.decode([tok]) for tok in probe_ids]
+    abs_pos = len(probe_ids) + rel_pos
+    window_start = max(0, abs_pos - 6)
+    window_end = min(len(probe_ids), abs_pos + 7)
+    print("Question-final suffix-after-question repr:", repr(suffix_after_question))
+    print("Question-final relative position:", rel_pos)
+    print("Question-final token window:", list(zip(range(window_start, window_end), probe_tokens[window_start:window_end])))
+    return [rel_pos]
+
+
+if CFG.positions is not None:
+    POSITIONS = list(CFG.positions)
+elif CFG.position_mode == "question_final":
+    POSITIONS = infer_question_final_position()
+else:
+    POSITIONS = infer_end_of_instruction_positions()
 print("Candidate positions:", POSITIONS)
 
 
