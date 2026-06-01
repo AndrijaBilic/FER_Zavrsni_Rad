@@ -1,0 +1,60 @@
+#!/bin/bash
+#PBS -N enum-gemma-fs-suf
+#PBS -q gpu-bigmem
+#PBS -l select=1:ncpus=8:ngpus=1:mem=120gb
+#PBS -l walltime=08:00:00
+#PBS -j oe
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+
+echo "Gemma few-shot suffix-position bf16 full started: $(date)"
+echo "Host: $(hostname)"
+echo "Workdir: $PBS_O_WORKDIR"
+echo "Job id: ${PBS_JOBID:-unknown}"
+
+if [ ! -x .venv/bin/python ]; then
+  echo "Missing .venv. Run first: bash srce/setup_uv_env.sh"
+  exit 2
+fi
+
+export PYTHONUNBUFFERED=1
+export TOKENIZERS_PARALLELISM=false
+export HF_HOME="$PBS_O_WORKDIR/.cache/huggingface"
+export TRANSFORMERS_CACHE="$HF_HOME/transformers"
+export HF_DATASETS_CACHE="$HF_HOME/datasets"
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+
+mkdir -p "$HF_HOME" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE" outputs
+source srce/load_hf_token.sh
+
+export MODEL_CHOICE=gemma3_12b_it
+export MODEL_QUANTIZATION=none
+export USE_4BIT=0
+export TORCH_DTYPE=bfloat16
+export PROMPT_VARIANT=few_shot_label
+export CHAT_ASSISTANT_PREFILL=1
+export GENERATION_HOOK_MODE=prefill_only
+export POSITIONS=auto
+
+export DRIVE_PATH="$PBS_O_WORKDIR/outputs"
+export ARTIFACT_SUBDIR="phase2_activation_steering_enumerability_gemma_fewshot_suffixpos_bf16"
+export PHASE1_CSV="$PBS_O_WORKDIR/outputs/df_webq_balanced.csv"
+
+export MAX_TRAIN_PER_CLASS=1000
+export MAX_VAL_PER_CLASS=300
+export MAX_TEST_PER_CLASS=300
+export MAX_MANUAL_QUESTIONS=10
+export WEBQ_EVAL_PER_CLASS=50
+export MAX_OOD_QUESTIONS=12
+export ALPHAS="-6.0,-4.0,-2.0,-1.0,0.0,1.0,2.0,4.0,6.0"
+export BATCH_SIZE_ACTIVATIONS=1
+export BATCH_SIZE_SCORING=1
+export BATCH_SIZE_GENERATION=1
+export MAX_NEW_TOKENS=64
+
+.venv/bin/python phase2_activation_steering_enumerability.py
+
+echo "Gemma few-shot suffix-position bf16 full finished: $(date)"
