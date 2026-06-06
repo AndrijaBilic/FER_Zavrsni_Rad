@@ -1,0 +1,46 @@
+#!/bin/bash
+#PBS -N it-paper-sanity
+#PBS -q gpu-bigmem
+#PBS -l select=1:ncpus=8:ngpus=1:mem=120gb
+#PBS -l walltime=01:00:00
+#PBS -j oe
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+
+echo "Paper-like instruction sanity-only job started: $(date)"
+echo "Host: $(hostname)"
+echo "Workdir: $PBS_O_WORKDIR"
+echo "Job id: ${PBS_JOBID:-unknown}"
+
+if [ ! -x .venv/bin/python ]; then
+  echo "Missing .venv. Run first: bash srce/setup_uv_env.sh"
+  exit 2
+fi
+
+export PYTHONUNBUFFERED=1
+export TOKENIZERS_PARALLELISM=false
+export HF_HOME="$PBS_O_WORKDIR/.cache/huggingface"
+export TRANSFORMERS_CACHE="$HF_HOME/transformers"
+export HF_DATASETS_CACHE="$HF_HOME/datasets"
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+
+source srce/load_hf_token.sh
+
+export MODEL_CHOICE="${MODEL_CHOICE:-mistral_7b_it}"
+export DRIVE_PATH="$PBS_O_WORKDIR/outputs"
+export ARTIFACT_SUBDIR="${ARTIFACT_SUBDIR:-phase2_activation_steering_enumerability_it_paperlike}"
+
+export CHAT_ASSISTANT_PREFILL=0
+export POSITIONS=auto
+export GENERATION_HOOK_MODE=prefill_only
+export MODEL_QUANTIZATION="${MODEL_QUANTIZATION:-4bit}"
+export TORCH_DTYPE="${TORCH_DTYPE:-float16}"
+export MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-8}"
+export SANITY_ALPHA_FOR_DELTA="${SANITY_ALPHA_FOR_DELTA:-4.0}"
+
+.venv/bin/python sanity_check_paperlike_instruction_steering.py
+
+echo "Paper-like instruction sanity-only job finished: $(date)"

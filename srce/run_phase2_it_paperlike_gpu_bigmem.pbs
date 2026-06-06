@@ -63,4 +63,7 @@ export ALPHAS="${ALPHAS:--6.0,-4.0,-2.0,-1.0,0.0,1.0,2.0,4.0,6.0}"
 
 .venv/bin/python phase2_activation_steering_enumerability.py
 
+echo "Running paper-like instruction steering sanity check: $(date)"
+.venv/bin/python sanity_check_paperlike_instruction_steering.py
+
 echo "Paper-like instruction steering job finished: $(date)"
