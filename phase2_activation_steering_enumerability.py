@@ -265,6 +265,23 @@ Question: {question}
 Answer type:"""
 
 
+DIRECT_LABEL_PROMPT = """Given the following question, decide whether it has one correct answer or multiple correct answers, then answer it.
+
+Your response must start with exactly one word: single or multiple.
+Then write the answer on the next line.
+
+Format:
+single
+Answer: <one answer>
+
+or
+
+multiple
+Answer: <comma-separated list of answers>
+
+Question: {question}"""
+
+
 FEW_SHOT_LABEL_PROMPT = """Decide whether each question has one correct answer or multiple correct answers, then answer it.
 
 Question: What is the capital of France?
@@ -290,10 +307,12 @@ Answer type:"""
 def format_enumerability_instruction(question: str) -> str:
     if CFG.prompt_variant == "zero_shot_label":
         template = ENUMERABILITY_PROMPT
+    elif CFG.prompt_variant == "zero_shot_direct_label":
+        template = DIRECT_LABEL_PROMPT
     elif CFG.prompt_variant == "few_shot_label":
         template = FEW_SHOT_LABEL_PROMPT
     else:
-        raise ValueError("PROMPT_VARIANT must be one of: zero_shot_label, few_shot_label")
+        raise ValueError("PROMPT_VARIANT must be one of: zero_shot_label, zero_shot_direct_label, few_shot_label")
     return template.format(question=question.strip())
 
 

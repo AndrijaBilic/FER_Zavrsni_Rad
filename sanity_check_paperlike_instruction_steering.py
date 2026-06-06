@@ -43,6 +43,23 @@ Question: {question}
 Answer type:"""
 
 
+DIRECT_LABEL_PROMPT = """Given the following question, decide whether it has one correct answer or multiple correct answers, then answer it.
+
+Your response must start with exactly one word: single or multiple.
+Then write the answer on the next line.
+
+Format:
+single
+Answer: <one answer>
+
+or
+
+multiple
+Answer: <comma-separated list of answers>
+
+Question: {question}"""
+
+
 @dataclass
 class SanityConfig:
     model_choice: str = os.environ.get("MODEL_CHOICE", "mistral_7b_it")
@@ -59,6 +76,7 @@ class SanityConfig:
         "yes",
         "YES",
     }
+    prompt_variant: str = os.environ.get("PROMPT_VARIANT", "zero_shot_direct_label")
     positions_env: str = os.environ.get("POSITIONS", "auto")
     generation_hook_mode: str = os.environ.get("GENERATION_HOOK_MODE", "prefill_only")
     max_new_tokens: int = int(os.environ.get("MAX_NEW_TOKENS", "8"))
@@ -144,7 +162,13 @@ def get_block_modules(model):
 
 
 def format_instruction(question: str) -> str:
-    return ENUMERABILITY_PROMPT.format(question=question.strip())
+    if CFG.prompt_variant == "zero_shot_label":
+        template = ENUMERABILITY_PROMPT
+    elif CFG.prompt_variant == "zero_shot_direct_label":
+        template = DIRECT_LABEL_PROMPT
+    else:
+        raise ValueError("PROMPT_VARIANT must be one of: zero_shot_label, zero_shot_direct_label")
+    return template.format(question=question.strip())
 
 
 def apply_chat_template(tokenizer, messages, **kwargs) -> str:
