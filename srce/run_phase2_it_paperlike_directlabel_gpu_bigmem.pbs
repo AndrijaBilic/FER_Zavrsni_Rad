@@ -35,7 +35,7 @@ export DRIVE_PATH="$PBS_O_WORKDIR/outputs"
 export ARTIFACT_SUBDIR="${ARTIFACT_SUBDIR:-phase2_activation_steering_enumerability_it_paperlike_directlabel}"
 export PHASE1_CSV="$PBS_O_WORKDIR/outputs/df_webq_balanced.csv"
 
-export PROMPT_VARIANT=zero_shot_direct_label
+export PROMPT_VARIANT="${PROMPT_VARIANT:-zero_shot_direct_label}"
 export CHAT_ASSISTANT_PREFILL=0
 export POSITIONS=auto
 export GENERATION_HOOK_MODE=prefill_only
@@ -56,6 +56,11 @@ export TORCH_DTYPE="${TORCH_DTYPE:-float16}"
 export SANITY_ALPHA_FOR_DELTA="${SANITY_ALPHA_FOR_DELTA:-4.0}"
 
 export ALPHAS="${ALPHAS:--6.0,-4.0,-2.0,-1.0,0.0,1.0,2.0,4.0,6.0}"
+
+echo "Prompt variant: $PROMPT_VARIANT"
+echo "Assistant prefill: $CHAT_ASSISTANT_PREFILL"
+echo "Positions: $POSITIONS"
+echo "Generation hook mode: $GENERATION_HOOK_MODE"
 
 .venv/bin/python phase2_activation_steering_enumerability.py
 
